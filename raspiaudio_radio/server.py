@@ -101,6 +101,9 @@ class RadioRequestHandler(BaseHTTPRequestHandler):
                 send_body=send_body,
             )
             return
+        if parsed.path == "/api/schedule":
+            self._send_ok(self.server.backend.get_schedule(), send_body=send_body)
+            return
         if parsed.path == "/api/favorites":
             favorites = self.server.backend.get_favorites()
             self._send_ok({"stations": favorites, "count": len(favorites)}, send_body=send_body)
@@ -176,6 +179,9 @@ class RadioRequestHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/mute":
                 self._send_ok(self.server.backend.set_muted(body.get("enabled")))
+                return
+            if parsed.path == "/api/schedule":
+                self._send_ok(self.server.backend.set_schedule(days=body.get("days")))
                 return
             if parsed.path == "/api/audio-output":
                 requested_output = str(body.get("mode") or body.get("audio_out") or "")

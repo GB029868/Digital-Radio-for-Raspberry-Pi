@@ -192,6 +192,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--favorites-file", type=Path, default=REPO_ROOT / "favorites.json")
     serve.add_argument("--recordings-dir", type=Path, default=REPO_ROOT / "recordings")
     serve.add_argument("--state-file", type=Path, default=REPO_ROOT / "runtime_state.json")
+    serve.add_argument("--schedule-file", type=Path, default=REPO_ROOT / "schedule.json")
     serve.add_argument("--spi-bus", type=int, default=0)
     serve.add_argument("--spi-dev", type=int, default=0)
     serve.add_argument("--spi-speed", type=int, default=30_000_000)
@@ -327,6 +328,7 @@ def main(argv: Optional[List[str]] = None) -> None:
             favorites_file=args.favorites_file.resolve(),
             recordings_dir=args.recordings_dir.resolve(),
             runtime_state_file=args.state_file.resolve(),
+            schedule_file=args.schedule_file.resolve(),
             spi_bus=args.spi_bus,
             spi_dev=args.spi_dev,
             spi_speed_hz=args.spi_speed,

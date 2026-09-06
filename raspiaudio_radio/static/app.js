@@ -17,10 +17,121 @@ const state = {
   browserOutputPlaying: false,
   browserOutputStarting: false,
   browserOutputMessage: "",
+  scheduleDirty: false,
 };
+
+const SCHEDULE_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
 function sleep(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+const VIEW_MODE_STORAGE_KEY = "radioViewMode";
+
+function applyViewMode(mode) {
+  const isAdvanced = mode === "advanced";
+  document.body.classList.toggle("view-simple", !isAdvanced);
+  const toggle = document.getElementById("advancedViewToggle");
+  if (toggle) toggle.checked = isAdvanced;
+}
+
+function initViewMode() {
+  let stored = "simple";
+  try {
+    stored = window.localStorage.getItem(VIEW_MODE_STORAGE_KEY) || "simple";
+  } catch (error) {
+    // localStorage unavailable (private browsing, blocked storage) - default to simple.
+  }
+  applyViewMode(stored);
+}
+
+function setViewMode(mode) {
+  applyViewMode(mode);
+  applySectionFilter(null);
+  try {
+    window.localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
+  } catch (error) {
+    // Ignore storage failures; the in-memory view still applies for this session.
+  }
+}
+
+const SLIDESHOW_STORAGE_KEY = "radioShowSlideshow";
+
+function applySlideshowVisible(show) {
+  document.body.classList.toggle("hide-slideshow", !show);
+  const toggle = document.getElementById("slideshowToggle");
+  if (toggle) toggle.checked = show;
+}
+
+function initSlideshowVisible() {
+  let stored = "false";
+  try {
+    stored = window.localStorage.getItem(SLIDESHOW_STORAGE_KEY) ?? "false";
+  } catch (error) {
+    // localStorage unavailable (private browsing, blocked storage) - default to hidden.
+  }
+  applySlideshowVisible(stored === "true");
+}
+
+function setSlideshowVisible(show) {
+  applySlideshowVisible(show);
+  try {
+    window.localStorage.setItem(SLIDESHOW_STORAGE_KEY, show ? "true" : "false");
+  } catch (error) {
+    // Ignore storage failures; the in-memory setting still applies for this session.
+  }
+}
+
+const THEME_STORAGE_KEY = "radioTheme";
+const THEME_CHOICES = ["blue", "red", "green"];
+
+function applyTheme(theme) {
+  const normalized = THEME_CHOICES.includes(theme) ? theme : "blue";
+  if (normalized === "blue") {
+    document.documentElement.removeAttribute("data-theme");
+  } else {
+    document.documentElement.setAttribute("data-theme", normalized);
+  }
+  document.querySelectorAll(".theme-swatch").forEach((btn) => {
+    const isActive = btn.dataset.themeChoice === normalized;
+    btn.classList.toggle("is-active", isActive);
+    btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+}
+
+function initTheme() {
+  let stored = "blue";
+  try {
+    stored = window.localStorage.getItem(THEME_STORAGE_KEY) || "blue";
+  } catch (error) {
+    // localStorage unavailable (private browsing, blocked storage) - default to blue.
+  }
+  applyTheme(stored);
+}
+
+function setTheme(theme) {
+  applyTheme(theme);
+  try {
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  } catch (error) {
+    // Ignore storage failures; the in-memory theme still applies for this session.
+  }
+}
+
+function applySectionFilter(key) {
+  if (key) {
+    document.body.setAttribute("data-section-filter", key);
+  } else {
+    document.body.removeAttribute("data-section-filter");
+  }
+  document.querySelectorAll(".section-filter-btn").forEach((btn) => {
+    btn.classList.toggle("is-active", btn.dataset.filterKey === key);
+  });
+}
+
+function toggleSectionFilter(key) {
+  const current = document.body.getAttribute("data-section-filter");
+  applySectionFilter(current === key ? null : key);
 }
 
 async function api(path, options = {}) {
@@ -390,7 +501,6 @@ function browserVolumeFromLevel(level) {
 
 function updateVolumeReadout(level) {
   const normalized = clampVolumeLevel(level);
-  document.getElementById("volumeLabel").textContent = `${normalized} / 63`;
   document.getElementById("volumeSlider").value = normalized;
 }
 
@@ -567,6 +677,15 @@ function updateAudioOutputUi(status) {
   }
 }
 
+function updateSignalMeter(score) {
+  const normalized = Math.max(0, Math.min(100, Number(score) || 0));
+  document.getElementById("signalScore").textContent = Math.round(normalized);
+  const filledCount = Math.ceil((normalized / 100) * 5);
+  document.querySelectorAll(".signal-bar").forEach((bar, index) => {
+    bar.classList.toggle("is-filled", index < filledCount);
+  });
+}
+
 function updateStatus(status, { preserveError = false } = {}) {
   state.status = status;
   const current = status.current_station || {};
@@ -576,7 +695,7 @@ function updateStatus(status, { preserveError = false } = {}) {
   const oledRequested = oled.requested ?? oled.enabled;
   const systemService = status.system_service || {};
 
-  document.getElementById("signalScore").textContent = signal.score ?? 0;
+  updateSignalMeter(signal.score ?? 0);
   document.getElementById("currentStation").textContent = current.label || "No station";
   document.getElementById("currentMode").textContent = status.mode_label || status.mode || "DAB";
   document.getElementById("firmwareLabel").textContent = "SPI host-load";
@@ -610,6 +729,10 @@ function updateStatus(status, { preserveError = false } = {}) {
     : systemService.enabled
       ? `${systemService.service || "raspiaudio-radio.service"} is enabled for the next Raspberry Pi boot.`
       : `${systemService.service || "raspiaudio-radio.service"} is disabled for the next Raspberry Pi boot.`;
+
+  if (status.schedule) {
+    renderSchedule(status.schedule);
+  }
 
   const ampButton = document.getElementById("ampButton");
   ampButton.textContent = status.amp_enabled ? "Amplifier on" : "Amplifier off";
@@ -1055,6 +1178,93 @@ async function setSystemAutostart(enabled) {
   }
 }
 
+function scheduleRow(day) {
+  return document.querySelector(`#scheduleTableBody tr[data-day="${day}"]`);
+}
+
+function renderSchedule(schedule) {
+  const days = schedule.days || {};
+  if (!state.scheduleDirty) {
+    SCHEDULE_DAYS.forEach((day) => {
+      const row = scheduleRow(day);
+      if (!row) return;
+      const cfg = days[day] || {};
+      row.querySelector(".schedule-start").value = cfg.start || "22:00";
+      row.querySelector(".schedule-end").value = cfg.end || "07:00";
+      row.querySelector(".schedule-enabled").checked = Boolean(cfg.enabled);
+    });
+  }
+  const anyEnabled = SCHEDULE_DAYS.some((day) => days[day]?.enabled);
+  const pill = document.getElementById("scheduleStatePill");
+  const statusText = document.getElementById("scheduleStatusText");
+  if (!anyEnabled) {
+    pill.textContent = "Off";
+    pill.classList.remove("is-on");
+    statusText.textContent = "Quiet hours are off. Turn on a day below to schedule a daily mute.";
+  } else if (schedule.active) {
+    pill.textContent = "Muted now";
+    pill.classList.add("is-on");
+    statusText.textContent = schedule.active_until
+      ? `Quiet hours are active now, until ${schedule.active_until}.`
+      : "Quiet hours are active now.";
+  } else {
+    pill.textContent = "Scheduled";
+    pill.classList.remove("is-on");
+    statusText.textContent = "Quiet hours are on, but no window is active right now.";
+  }
+  document.getElementById("scheduleDirtyHint").hidden = !state.scheduleDirty;
+}
+
+function markScheduleDirty() {
+  state.scheduleDirty = true;
+  document.getElementById("scheduleDirtyHint").hidden = false;
+}
+
+function collectScheduleDays() {
+  const days = {};
+  SCHEDULE_DAYS.forEach((day) => {
+    const row = scheduleRow(day);
+    if (!row) return;
+    days[day] = {
+      start: row.querySelector(".schedule-start").value || "22:00",
+      end: row.querySelector(".schedule-end").value || "07:00",
+      enabled: row.querySelector(".schedule-enabled").checked,
+    };
+  });
+  return days;
+}
+
+function applyMondayToAllDays() {
+  const monday = scheduleRow("mon");
+  if (!monday) return;
+  const start = monday.querySelector(".schedule-start").value || "22:00";
+  const end = monday.querySelector(".schedule-end").value || "07:00";
+  SCHEDULE_DAYS.filter((day) => day !== "mon").forEach((day) => {
+    const row = scheduleRow(day);
+    if (!row) return;
+    row.querySelector(".schedule-start").value = start;
+    row.querySelector(".schedule-end").value = end;
+  });
+  markScheduleDirty();
+}
+
+async function saveSchedule() {
+  const button = document.getElementById("scheduleSaveButton");
+  setBusy(button, true, "Saving...");
+  try {
+    await api("/api/schedule", {
+      method: "POST",
+      body: JSON.stringify({ days: collectScheduleDays() }),
+    });
+    state.scheduleDirty = false;
+    await refreshStatus();
+  } catch (error) {
+    setError(error.message);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
 async function installSpiConfig() {
   const button = document.getElementById("spiInstallButton");
   const setup = state.status?.spi_setup || {};
@@ -1208,6 +1418,9 @@ async function restartServer() {
 }
 
 function wireEvents() {
+  document.querySelectorAll(".section-filter-btn").forEach((btn) => {
+    btn.addEventListener("click", () => toggleSectionFilter(btn.dataset.filterKey));
+  });
   document.getElementById("scanButton").addEventListener("click", scanStations);
   document.getElementById("restartServerButton").addEventListener("click", restartServer);
   document.getElementById("stopServerButton").addEventListener("click", stopServer);
@@ -1238,6 +1451,21 @@ function wireEvents() {
   document.getElementById("systemAutostartToggle").addEventListener("change", (event) => {
     setSystemAutostart(Boolean(event.target.checked));
   });
+  document.getElementById("slideshowToggle").addEventListener("change", (event) => {
+    setSlideshowVisible(Boolean(event.target.checked));
+  });
+  document.querySelectorAll(".theme-swatch").forEach((btn) => {
+    btn.addEventListener("click", () => setTheme(btn.dataset.themeChoice));
+  });
+  document.querySelectorAll("#scheduleTableBody input").forEach((input) => {
+    input.addEventListener("input", markScheduleDirty);
+    input.addEventListener("change", markScheduleDirty);
+  });
+  document.getElementById("scheduleApplyAllButton").addEventListener("click", applyMondayToAllDays);
+  document.getElementById("scheduleSaveButton").addEventListener("click", saveSchedule);
+  document.getElementById("advancedViewToggle").addEventListener("change", (event) => {
+    setViewMode(event.target.checked ? "advanced" : "simple");
+  });
   document.getElementById("volumeSlider").addEventListener("input", (event) => {
     const level = Number(event.target.value);
     updateVolumeReadout(level);
@@ -1257,6 +1485,9 @@ function wireEvents() {
 }
 
 async function init() {
+  initViewMode();
+  initSlideshowVisible();
+  initTheme();
   wireEvents();
   startBackendScanWatcher();
   await syncBackendScanProgress();

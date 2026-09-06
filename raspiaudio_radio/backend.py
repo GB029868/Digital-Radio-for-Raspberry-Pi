@@ -380,6 +380,11 @@ def _infer_artist_title(text: str) -> tuple[Optional[str], Optional[str]]:
     match = re.match(r"^(?P<title>.+?)\s+by\s+(?P<artist>.+)$", cleaned, flags=re.IGNORECASE)
     if match:
         return match.group("artist").strip(), match.group("title").strip()
+    # Some stations (e.g. Capital) send a house-style caption instead of PAD-encoded
+    # fields, such as "Now on Capital DANCE: Artist with Title".
+    match = re.match(r"^now on\s+.+?:\s*(?P<artist>.+?)\s+with\s+(?P<title>.+)$", cleaned, flags=re.IGNORECASE)
+    if match:
+        return match.group("artist").strip(), match.group("title").strip()
     return None, None
 
 
@@ -584,6 +589,7 @@ class RadioConfig:
     favorites_file: Path
     recordings_dir: Path
     runtime_state_file: Path
+    schedule_file: Path
     i2c_bus: int = 1
     i2c_addr: int = 0x64
     spi_bus: int = 0
@@ -1060,6 +1066,18 @@ class OledStatusDisplay:
         self.enabled = False
 
 
+_HHMM_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
+_WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
+def _default_day_schedule() -> Dict[str, Any]:
+    return {"enabled": False, "start": "22:00", "end": "07:00"}
+
+
+def _default_schedule() -> Dict[str, Any]:
+    return {"days": {key: _default_day_schedule() for key in _WEEKDAY_KEYS}}
+
+
 class RadioBackend:
     def __init__(self, config: RadioConfig) -> None:
         self.config = config
@@ -1097,6 +1115,10 @@ class RadioBackend:
         self._scan_progress_lock = threading.Lock()
         self._scan_progress: Dict[str, Any] = self._empty_scan_progress()
         self._favorites: set[str] = set()
+        self._schedule: Dict[str, Any] = _default_schedule()
+        self._schedule_state: Optional[bool] = None
+        self._schedule_stop = threading.Event()
+        self._schedule_thread: Optional[threading.Thread] = None
         self._recording_process: Optional[subprocess.Popen[str]] = None
         self._recording_meta: Optional[Dict[str, Any]] = None
         self._oled_requested = bool(config.oled_enabled)
@@ -1113,6 +1135,7 @@ class RadioBackend:
         self._dab_freq_index = {freq: idx for idx, freq in enumerate(self._dab_freqs)}
         self._load_scan_files_locked()
         self._load_favorites_locked()
+        self._load_schedule_locked()
         self.config.recordings_dir.mkdir(parents=True, exist_ok=True)
         self._load_runtime_state_locked()
         self._button_nav = ButtonNavigator(
@@ -1136,6 +1159,8 @@ class RadioBackend:
                 )
         self._oled = self._new_oled_locked(enabled=self._oled_requested)
         self._oled.start()
+        self._schedule_thread = threading.Thread(target=self._run_schedule_loop, name="mute-schedule", daemon=True)
+        self._schedule_thread.start()
         atexit.register(self.close)
         with self._lock:
             self._schedule_runtime_resume_locked(delay_s=2.0)
@@ -1448,6 +1473,7 @@ class RadioBackend:
     def close(self) -> None:
         button_nav = self._button_nav
         oled = self._oled
+        self._schedule_stop.set()
         with self._lock:
             self._closing = True
             self._cancel_nav_push_timer_locked()
@@ -1456,6 +1482,8 @@ class RadioBackend:
             self._save_runtime_state_locked()
             self._stop_recording_locked()
             self._shutdown_locked(close_amp=True)
+        if self._schedule_thread is not None:
+            self._schedule_thread.join(timeout=0.5)
         button_nav.close()
         oled.close()
 
@@ -1971,6 +1999,161 @@ print(json.dumps({"changed": changed, "missing_added": missing, "backup": backup
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(sorted(self._favorites), indent=2, ensure_ascii=False), encoding="utf-8")
 
+    @staticmethod
+    def _parse_hhmm(value: Any) -> Optional[tuple[int, int]]:
+        match = _HHMM_RE.match(str(value or "").strip())
+        if not match:
+            return None
+        return int(match.group(1)), int(match.group(2))
+
+    def _load_schedule_locked(self) -> None:
+        self._schedule = _default_schedule()
+        path = self.config.schedule_file
+        if not path.exists():
+            return
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        days = data.get("days")
+        if not isinstance(days, dict):
+            return
+        for key in _WEEKDAY_KEYS:
+            day_data = days.get(key)
+            if not isinstance(day_data, dict):
+                continue
+            start = self._parse_hhmm(day_data.get("start"))
+            end = self._parse_hhmm(day_data.get("end"))
+            if start is not None:
+                self._schedule["days"][key]["start"] = f"{start[0]:02d}:{start[1]:02d}"
+            if end is not None:
+                self._schedule["days"][key]["end"] = f"{end[0]:02d}:{end[1]:02d}"
+            self._schedule["days"][key]["enabled"] = bool(day_data.get("enabled", False))
+
+    def _save_schedule_locked(self) -> None:
+        path = self.config.schedule_file
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self._schedule, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def _day_window_minutes_locked(self, day_cfg: Dict[str, Any]) -> Optional[tuple[int, int]]:
+        start = self._parse_hhmm(day_cfg.get("start"))
+        end = self._parse_hhmm(day_cfg.get("end"))
+        if start is None or end is None:
+            return None
+        start_minutes = start[0] * 60 + start[1]
+        end_minutes = end[0] * 60 + end[1]
+        if start_minutes == end_minutes:
+            return None
+        return start_minutes, end_minutes
+
+    def _schedule_active_until_locked(self, now: datetime) -> tuple[bool, Optional[str]]:
+        """Returns (currently_muted_by_schedule, end_time_of_the_governing_window)."""
+        days = self._schedule.get("days", {})
+        now_minutes = now.hour * 60 + now.minute
+        today_key = _WEEKDAY_KEYS[now.weekday()]
+        yesterday_key = _WEEKDAY_KEYS[(now.weekday() - 1) % 7]
+        today_cfg = days.get(today_key) or {}
+        if today_cfg.get("enabled"):
+            window = self._day_window_minutes_locked(today_cfg)
+            if window is not None:
+                start_minutes, end_minutes = window
+                if start_minutes < end_minutes:
+                    if start_minutes <= now_minutes < end_minutes:
+                        return True, today_cfg.get("end")
+                elif now_minutes >= start_minutes:
+                    # Window starts today and wraps past midnight into tomorrow.
+                    return True, today_cfg.get("end")
+        yesterday_cfg = days.get(yesterday_key) or {}
+        if yesterday_cfg.get("enabled"):
+            window = self._day_window_minutes_locked(yesterday_cfg)
+            if window is not None:
+                start_minutes, end_minutes = window
+                if start_minutes > end_minutes and now_minutes < end_minutes:
+                    # Yesterday's window wrapped past midnight into today.
+                    return True, yesterday_cfg.get("end")
+        return False, None
+
+    def _is_within_schedule_window_locked(self, now: datetime) -> bool:
+        active, _ = self._schedule_active_until_locked(now)
+        return active
+
+    def _schedule_payload_locked(self) -> Dict[str, Any]:
+        now = datetime.now()
+        active, active_until = self._schedule_active_until_locked(now)
+        return {
+            "days": {key: dict(cfg) for key, cfg in self._schedule.get("days", {}).items()},
+            "active": active,
+            "active_until": active_until,
+            "muted": self._muted,
+            "today": _WEEKDAY_KEYS[now.weekday()],
+        }
+
+    def get_schedule(self) -> Dict[str, Any]:
+        with self._lock:
+            return self._schedule_payload_locked()
+
+    def set_schedule(self, days: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        if days is None:
+            days = {}
+        if not isinstance(days, dict):
+            raise ValueError("days must be an object keyed by weekday (mon, tue, wed, thu, fri, sat, sun).")
+        with self._lock:
+            next_days = {key: dict(cfg) for key, cfg in self._schedule.get("days", {}).items()}
+            for raw_key, raw_value in days.items():
+                day_key = str(raw_key).strip().lower()[:3]
+                if day_key not in _WEEKDAY_KEYS:
+                    raise ValueError(f"Unknown day '{raw_key}'. Use mon, tue, wed, thu, fri, sat, sun.")
+                if not isinstance(raw_value, dict):
+                    raise ValueError(f"Schedule for '{day_key}' must be an object.")
+                current = dict(next_days[day_key])
+                if "start" in raw_value:
+                    parsed = self._parse_hhmm(raw_value.get("start"))
+                    if parsed is None:
+                        raise ValueError(f"{day_key}: start must be in HH:MM 24-hour format.")
+                    current["start"] = f"{parsed[0]:02d}:{parsed[1]:02d}"
+                if "end" in raw_value:
+                    parsed = self._parse_hhmm(raw_value.get("end"))
+                    if parsed is None:
+                        raise ValueError(f"{day_key}: end must be in HH:MM 24-hour format.")
+                    current["end"] = f"{parsed[0]:02d}:{parsed[1]:02d}"
+                if "enabled" in raw_value:
+                    current["enabled"] = bool(raw_value.get("enabled"))
+                next_days[day_key] = current
+            self._schedule = {"days": next_days}
+            self._schedule_state = None
+            self._save_schedule_locked()
+        self._poll_schedule()
+        with self._lock:
+            return self._schedule_payload_locked()
+
+    def _poll_schedule(self) -> None:
+        with self._lock:
+            any_enabled = any(cfg.get("enabled") for cfg in self._schedule.get("days", {}).values())
+            if not any_enabled:
+                self._schedule_state = None
+                return
+            active = self._is_within_schedule_window_locked(datetime.now())
+            if self._schedule_state == active:
+                return
+        try:
+            self.set_muted(active)
+        except Exception as exc:
+            # Leave _schedule_state unset so the next poll retries this transition
+            # instead of silently skipping the scheduled mute/unmute.
+            with self._lock:
+                self._last_error = str(exc)
+            return
+        with self._lock:
+            self._schedule_state = active
+
+    def _run_schedule_loop(self) -> None:
+        while not self._schedule_stop.is_set():
+            try:
+                self._poll_schedule()
+            except Exception:
+                pass
+            self._schedule_stop.wait(20.0)
+
     def _load_runtime_state_locked(self) -> None:
         path = self.config.runtime_state_file
         if not path.exists():
@@ -2136,6 +2319,7 @@ print(json.dumps({"changed": changed, "missing_added": missing, "backup": backup
                 "i2s_setup": i2s_setup,
             },
             "recordings_count": len(self._list_recordings_locked()),
+            "schedule": self._schedule_payload_locked(),
             "last_error": self._last_error,
         }
 

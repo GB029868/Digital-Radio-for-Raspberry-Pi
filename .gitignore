@@ -3,6 +3,7 @@ __pycache__/
 server.log
 recordings/
 favorites.json
+schedule.json
 fm_scan.txt
 hd_scan.txt
 am_scan.txt

@@ -1,18 +1,55 @@
 :root {
-  --brand-blue: #2e66d4;
-  --brand-blue-deep: #15378d;
-  --brand-charcoal: #2f3542;
-  --brand-ink: #10214b;
-  --brand-paper: #f5f8ff;
+  --brand-blue: #1379b3;
+  --brand-blue-deep: #095287;
+  --brand-charcoal: #0b3a5c;
+  --brand-ink: #063452;
+  --brand-paper: #dce7ed;
   --brand-white: #ffffff;
-  --brand-line: rgba(46, 102, 212, 0.16);
-  --brand-glow: rgba(46, 102, 212, 0.18);
+  --brand-deep-rgb: 9, 82, 135;
+  --brand-dark-rgb: 4, 30, 51;
+  --brand-muted-rgb: 7, 58, 94;
+  --brand-paper-rgb: 220, 231, 237;
+  --brand-bg-start: #04314f;
+  --brand-bg-end: #062e4a;
+  --brand-badge-start: #052f4b;
+  --brand-line: rgba(var(--brand-deep-rgb), 0.18);
+  --brand-glow: rgba(var(--brand-deep-rgb), 0.22);
   --brand-accent: #ff9a3e;
   --brand-accent-deep: #e56b0b;
   --status-green: #14936c;
   --status-orange: #c77b1d;
   --danger: #c23636;
-  --shadow-soft: 0 24px 60px rgba(16, 33, 75, 0.12);
+  --shadow-soft: 0 24px 60px rgba(var(--brand-dark-rgb), 0.35);
+}
+
+:root[data-theme="red"] {
+  --brand-blue: #b3311f;
+  --brand-blue-deep: #7a2015;
+  --brand-charcoal: #5c1610;
+  --brand-ink: #4a1410;
+  --brand-paper: #f3dcdc;
+  --brand-deep-rgb: 122, 32, 21;
+  --brand-dark-rgb: 51, 12, 9;
+  --brand-muted-rgb: 94, 30, 24;
+  --brand-paper-rgb: 243, 220, 220;
+  --brand-bg-start: #4f0f0a;
+  --brand-bg-end: #2e0a06;
+  --brand-badge-start: #4b0f0a;
+}
+
+:root[data-theme="green"] {
+  --brand-blue: #1f8a4d;
+  --brand-blue-deep: #0f6b39;
+  --brand-charcoal: #0e4a2c;
+  --brand-ink: #0a3d24;
+  --brand-paper: #dcece1;
+  --brand-deep-rgb: 15, 107, 57;
+  --brand-dark-rgb: 8, 33, 22;
+  --brand-muted-rgb: 15, 66, 45;
+  --brand-paper-rgb: 220, 236, 225;
+  --brand-bg-start: #063820;
+  --brand-bg-end: #052e1a;
+  --brand-badge-start: #063820;
 }
 
 * {
@@ -26,9 +63,9 @@ body {
   font-family: "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
   color: var(--brand-charcoal);
   background:
-    radial-gradient(circle at top left, rgba(46, 102, 212, 0.18), transparent 30rem),
+    radial-gradient(circle at top left, rgba(var(--brand-deep-rgb), 0.18), transparent 30rem),
     radial-gradient(circle at right center, rgba(255, 154, 62, 0.12), transparent 24rem),
-    linear-gradient(135deg, #eef4ff 0%, #fbfcff 55%, #edf3ff 100%);
+    linear-gradient(135deg, var(--brand-bg-start) 0%, var(--brand-blue-deep) 55%, var(--brand-bg-end) 100%);
 }
 
 body::before,
@@ -46,13 +83,13 @@ body::after {
 body::before {
   top: -7rem;
   right: -6rem;
-  background: rgba(46, 102, 212, 0.16);
+  background: rgba(var(--brand-deep-rgb), 0.16);
 }
 
 body::after {
   bottom: -8rem;
   left: -8rem;
-  background: rgba(16, 33, 75, 0.1);
+  background: rgba(var(--brand-dark-rgb), 0.1);
 }
 
 .page-shell {
@@ -67,11 +104,12 @@ body::after {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-areas:
-    "media artwork"
+    "artwork artwork"
     "favorites favorites"
     "status status"
     "source source"
     "stations stations"
+    "schedule schedule"
     "recordings recordings"
     "configuration configuration";
   gap: 1rem;
@@ -79,7 +117,7 @@ body::after {
 }
 
 .panel {
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(var(--brand-paper-rgb), 0.92);
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 1.65rem;
   box-shadow: var(--shadow-soft);
@@ -102,7 +140,7 @@ body::after {
   inset: auto -5rem -6rem auto;
   width: 18rem;
   height: 18rem;
-  background: linear-gradient(135deg, rgba(46, 102, 212, 0.16), rgba(16, 33, 75, 0));
+  background: linear-gradient(135deg, rgba(var(--brand-deep-rgb), 0.16), rgba(var(--brand-dark-rgb), 0));
   transform: rotate(18deg);
 }
 
@@ -121,26 +159,154 @@ body::after {
   white-space: nowrap;
 }
 
-.hero-link {
-  color: var(--brand-blue-deep);
-  font-weight: 700;
-  text-decoration: none;
-  border-bottom: 1px solid rgba(21, 55, 141, 0.22);
-  padding-bottom: 0.12rem;
+.hero-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
-.hero-link-row {
+.view-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 0 0 auto;
+}
+
+.view-toggle-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: rgba(var(--brand-muted-rgb), 0.55);
+  transition: color 0.15s ease;
+}
+
+.view-switch {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.view-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: pointer;
+}
+
+.view-switch-track {
+  width: 3rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  background: rgba(var(--brand-deep-rgb), 0.22);
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem;
+  transition: background 0.15s ease;
+}
+
+.view-switch-thumb {
+  width: 1.24rem;
+  height: 1.24rem;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(var(--brand-deep-rgb), 0.35);
+  transition: transform 0.18s ease;
+}
+
+.view-switch input:checked ~ .view-switch-track {
+  background: var(--brand-blue);
+}
+
+.view-switch input:checked ~ .view-switch-track .view-switch-thumb {
+  transform: translateX(1.4rem);
+}
+
+.view-switch input:focus-visible ~ .view-switch-track {
+  outline: 2px solid var(--brand-blue-deep);
+  outline-offset: 2px;
+}
+
+.view-toggle:has(input:checked) .view-toggle-label:last-child,
+.view-toggle:not(:has(input:checked)) .view-toggle-label:first-child {
+  color: var(--brand-ink);
+}
+
+body.view-simple [data-view="advanced"] {
+  display: none;
+}
+
+body.hide-slideshow .slideshow-element {
+  display: none;
+}
+
+/* The stage box itself only ever holds slideshow-element children (the
+   artwork image/fallback letter). With slideshow off, hide the box too so
+   the artwork panel doesn't show an empty coloured shell above the Now
+   Playing Details it always does have something to show. */
+body.hide-slideshow .artwork-stage {
+  display: none;
+}
+
+.section-filter {
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem;
-  margin: 1rem 0 0;
-  line-height: 1.6;
-  color: rgba(47, 53, 66, 0.82);
+  gap: 0.6rem;
+  margin-bottom: 1rem;
 }
 
-.hero-link:hover {
-  color: var(--brand-accent-deep);
-  border-bottom-color: rgba(229, 107, 11, 0.36);
+.section-filter-btn {
+  appearance: none;
+  border: 1px solid var(--brand-line);
+  background: rgba(var(--brand-paper-rgb), 0.92);
+  color: var(--brand-ink);
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.88rem;
+  padding: 0.55rem 1.05rem;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(10px);
+  transition: background 160ms ease, color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+.section-filter-btn:hover {
+  transform: translateY(-2px);
+}
+
+.section-filter-btn.is-active {
+  background: linear-gradient(135deg, var(--brand-blue), var(--brand-blue-deep));
+  color: var(--brand-white);
+  border-color: transparent;
+  box-shadow: 0 14px 32px rgba(var(--brand-deep-rgb), 0.28);
+}
+
+/* Every filterable dashboard panel is hidden by default (whether or not a filter
+   is active) - the override rule below re-shows only the one matching the active
+   key. With no filter active at all, none of them show, which leaves the artwork
+   panel as the sole visible thing. This applies identically in Simple and
+   Advanced view. */
+body .dashboard > [data-filter-key] {
+  display: none;
+}
+
+body[data-section-filter="favorites"] .dashboard > [data-filter-key="favorites"],
+body[data-section-filter="stations"] .dashboard > [data-filter-key="stations"],
+body[data-section-filter="schedule"] .dashboard > [data-filter-key="schedule"],
+body[data-section-filter="status"] .dashboard > [data-filter-key="status"],
+body[data-section-filter="source"] .dashboard > [data-filter-key="source"],
+body[data-section-filter="recordings"] .dashboard > [data-filter-key="recordings"],
+body[data-section-filter="configuration"] .dashboard > [data-filter-key="configuration"] {
+  display: block;
+}
+
+/* The artwork/now-playing panel is the "nothing toggled on" state: it only
+   shows when no section filter is active, in both Simple and Advanced view. */
+body[data-section-filter] .artwork-panel {
+  display: none;
 }
 
 .hero-actions,
@@ -167,15 +333,84 @@ body::after {
   gap: 0.85rem;
 }
 
+.schedule-hint {
+  margin: 0.6rem 0 0;
+  color: rgba(var(--brand-muted-rgb), 0.68);
+  line-height: 1.45;
+}
+
+.schedule-table-wrap {
+  margin-top: 1rem;
+  overflow-x: auto;
+  border: 1px solid var(--brand-line);
+  border-radius: 1.1rem;
+  background: rgba(var(--brand-paper-rgb), 0.92);
+}
+
+.schedule-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 420px;
+}
+
+.schedule-table th,
+.schedule-table td {
+  padding: 0.65rem 0.85rem;
+  text-align: left;
+  border-bottom: 1px solid var(--brand-line);
+  white-space: nowrap;
+}
+
+.schedule-table thead th {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(var(--brand-muted-rgb), 0.58);
+  font-weight: 700;
+}
+
+.schedule-table tbody th {
+  color: var(--brand-ink);
+  font-weight: 600;
+}
+
+.schedule-table tbody tr:last-child th,
+.schedule-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.schedule-table input[type="time"] {
+  padding: 0.5rem 0.6rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--brand-line);
+  background: rgba(var(--brand-paper-rgb), 0.96);
+  color: var(--brand-ink);
+  font: inherit;
+}
+
+.schedule-table input[type="checkbox"] {
+  width: 1.2rem;
+  height: 1.2rem;
+  accent-color: var(--brand-blue);
+}
+
+.schedule-actions {
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
 .audio-output-card {
   margin-top: 1rem;
   padding: 1rem;
-  border: 1px solid rgba(46, 102, 212, 0.18);
+  border: 1px solid rgba(var(--brand-deep-rgb), 0.18);
   border-radius: 1.35rem;
   background:
     linear-gradient(135deg, rgba(255, 154, 62, 0.12), transparent 42%),
-    linear-gradient(155deg, rgba(46, 102, 212, 0.1), rgba(255, 255, 255, 0.94));
-  box-shadow: 0 18px 36px rgba(46, 102, 212, 0.1);
+    linear-gradient(155deg, rgba(var(--brand-deep-rgb), 0.1), rgba(var(--brand-paper-rgb), 0.94));
+  box-shadow: 0 18px 36px rgba(var(--brand-deep-rgb), 0.1);
 }
 
 .audio-output-head,
@@ -200,6 +435,77 @@ body::after {
   margin-top: 0.9rem;
 }
 
+.theme-card {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(var(--brand-deep-rgb), 0.18);
+  border-radius: 1.35rem;
+  background:
+    linear-gradient(135deg, rgba(255, 154, 62, 0.12), transparent 42%),
+    linear-gradient(155deg, rgba(var(--brand-deep-rgb), 0.1), rgba(var(--brand-paper-rgb), 0.94));
+  box-shadow: 0 18px 36px rgba(var(--brand-deep-rgb), 0.1);
+}
+
+.theme-card small {
+  display: block;
+  margin-top: 0.4rem;
+  color: rgba(var(--brand-muted-rgb), 0.68);
+  line-height: 1.35;
+}
+
+.theme-swatches {
+  margin-top: 0.9rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.theme-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--brand-line);
+  background: rgba(var(--brand-paper-rgb), 0.82);
+  color: var(--brand-ink);
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.88rem;
+  padding: 0.55rem 1rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.theme-swatch:hover {
+  transform: translateY(-2px);
+}
+
+.theme-swatch-dot {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+  flex: 0 0 auto;
+}
+
+.theme-swatch-dot--blue {
+  background: #095287;
+}
+
+.theme-swatch-dot--red {
+  background: #7a2015;
+}
+
+.theme-swatch-dot--green {
+  background: #0f6b39;
+}
+
+.theme-swatch.is-active {
+  border-color: var(--brand-blue);
+  background: rgba(var(--brand-deep-rgb), 0.14);
+  box-shadow: 0 10px 24px rgba(var(--brand-deep-rgb), 0.22);
+}
+
 .browser-audio-player {
   display: none;
 }
@@ -207,7 +513,7 @@ body::after {
 #browserOutputHint {
   display: block;
   margin-top: 0.6rem;
-  color: rgba(47, 53, 66, 0.68);
+  color: rgba(var(--brand-muted-rgb), 0.68);
   line-height: 1.35;
 }
 
@@ -227,7 +533,7 @@ body::after {
 }
 
 .i2s-setup-card small {
-  color: rgba(47, 53, 66, 0.72);
+  color: rgba(var(--brand-muted-rgb), 0.72);
   line-height: 1.35;
 }
 
@@ -278,7 +584,7 @@ body::after {
 }
 
 .hero-now span:last-child {
-  color: rgba(47, 53, 66, 0.66);
+  color: rgba(var(--brand-muted-rgb), 0.66);
 }
 
 .toggle-card {
@@ -290,8 +596,8 @@ body::after {
   padding: 0.95rem 1rem;
   border-radius: 1.1rem;
   border: 1px solid var(--brand-line);
-  background: linear-gradient(155deg, rgba(46, 102, 212, 0.08), rgba(255, 255, 255, 0.96));
-  box-shadow: 0 14px 26px rgba(46, 102, 212, 0.08);
+  background: linear-gradient(155deg, rgba(var(--brand-deep-rgb), 0.08), rgba(var(--brand-paper-rgb), 0.96));
+  box-shadow: 0 14px 26px rgba(var(--brand-deep-rgb), 0.08);
 }
 
 .toggle-copy {
@@ -304,7 +610,7 @@ body::after {
 }
 
 .toggle-copy small {
-  color: rgba(47, 53, 66, 0.68);
+  color: rgba(var(--brand-muted-rgb), 0.68);
   line-height: 1.35;
 }
 
@@ -327,7 +633,7 @@ body::after {
 .meta-label {
   display: block;
   margin-bottom: 0.2rem;
-  color: rgba(47, 53, 66, 0.58);
+  color: rgba(var(--brand-muted-rgb), 0.58);
   font-size: 0.78rem;
   text-transform: uppercase;
   letter-spacing: 0.14em;
@@ -359,17 +665,17 @@ body::after {
 .btn-primary {
   color: var(--brand-white);
   background: linear-gradient(135deg, var(--brand-blue), var(--brand-blue-deep));
-  box-shadow: 0 14px 32px rgba(46, 102, 212, 0.24);
+  box-shadow: 0 14px 32px rgba(var(--brand-deep-rgb), 0.24);
 }
 
 .btn-secondary {
   color: var(--brand-ink);
-  background: linear-gradient(135deg, rgba(46, 102, 212, 0.14), rgba(46, 102, 212, 0.24));
+  background: linear-gradient(135deg, rgba(var(--brand-deep-rgb), 0.14), rgba(var(--brand-deep-rgb), 0.24));
 }
 
 .btn-ghost {
   color: var(--brand-charcoal);
-  background: rgba(255, 255, 255, 0.82);
+  background: rgba(var(--brand-paper-rgb), 0.82);
   border: 1px solid var(--brand-line);
 }
 
@@ -413,30 +719,71 @@ body::after {
   box-shadow: 0 14px 32px rgba(20, 147, 108, 0.22);
 }
 
-.signal-ring {
-  width: 10.8rem;
-  aspect-ratio: 1;
+.signal-meter {
   display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at center, var(--brand-white) 0 44%, transparent 45% 100%),
-    conic-gradient(var(--brand-blue) 0deg, #9ab8ff 210deg, rgba(46, 102, 212, 0.12) 360deg);
-  box-shadow: inset 0 0 0 12px rgba(255, 255, 255, 0.7), 0 20px 40px var(--brand-glow);
+  justify-items: center;
+  gap: 0.6rem;
+  padding: 1.1rem 1.6rem;
+  border-radius: 1.4rem;
+  background: rgba(var(--brand-paper-rgb), 0.55);
+  box-shadow: 0 20px 40px var(--brand-glow);
 }
 
-.signal-ring span {
-  font-size: 2.5rem;
-  font-weight: 800;
+.signal-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.32rem;
+  height: 3.6rem;
+}
+
+.signal-bar {
+  width: 0.6rem;
+  border-radius: 999px;
+  background: rgba(var(--brand-deep-rgb), 0.16);
+  transition: background 200ms ease;
+}
+
+.signal-bar:nth-child(1) {
+  height: 32%;
+}
+
+.signal-bar:nth-child(2) {
+  height: 50%;
+}
+
+.signal-bar:nth-child(3) {
+  height: 68%;
+}
+
+.signal-bar:nth-child(4) {
+  height: 86%;
+}
+
+.signal-bar:nth-child(5) {
+  height: 100%;
+}
+
+.signal-bar.is-filled {
+  background: linear-gradient(180deg, var(--brand-blue), var(--brand-blue-deep));
+}
+
+.signal-readout {
+  display: flex;
+  align-items: baseline;
+  gap: 0.15rem;
   color: var(--brand-ink);
 }
 
-.signal-ring small {
-  display: block;
-  margin-top: -0.35rem;
+.signal-readout span {
+  font-size: 1.7rem;
+  font-weight: 800;
+}
+
+.signal-readout small {
   text-transform: uppercase;
-  letter-spacing: 0.22em;
-  color: rgba(47, 53, 66, 0.55);
+  letter-spacing: 0.2em;
+  font-size: 0.72rem;
+  color: rgba(var(--brand-muted-rgb), 0.55);
 }
 
 .stats-grid {
@@ -451,8 +798,8 @@ body::after {
 .favorite-chip,
 .recording-item {
   border: 1px solid var(--brand-line);
-  background: linear-gradient(155deg, rgba(46, 102, 212, 0.08), rgba(255, 255, 255, 0.96));
-  box-shadow: 0 14px 26px rgba(46, 102, 212, 0.08);
+  background: linear-gradient(155deg, rgba(var(--brand-deep-rgb), 0.08), rgba(var(--brand-paper-rgb), 0.96));
+  box-shadow: 0 14px 26px rgba(var(--brand-deep-rgb), 0.08);
 }
 
 .stat-card {
@@ -484,7 +831,7 @@ body::after {
 }
 
 .status-ready {
-  background: rgba(46, 102, 212, 0.14);
+  background: rgba(var(--brand-deep-rgb), 0.14);
   color: var(--brand-blue-deep);
 }
 
@@ -494,8 +841,13 @@ body::after {
 }
 
 .count-pill {
-  background: rgba(46, 102, 212, 0.1);
+  background: rgba(var(--brand-deep-rgb), 0.1);
   color: var(--brand-blue-deep);
+}
+
+.count-pill.is-on {
+  background: rgba(199, 123, 29, 0.16);
+  color: var(--status-orange);
 }
 
 .volume-strip {
@@ -516,7 +868,7 @@ body::after {
   margin-top: 1rem;
   justify-content: space-between;
   flex-wrap: wrap;
-  color: rgba(47, 53, 66, 0.72);
+  color: rgba(var(--brand-muted-rgb), 0.72);
 }
 
 .error-line {
@@ -543,6 +895,7 @@ body::after {
 
 .mode-card span,
 .station-name,
+.favorite-label,
 .recording-station {
   display: block;
   font-weight: 800;
@@ -566,8 +919,8 @@ body::after {
   letter-spacing: 0.08em;
   line-height: 1.1;
   color: #fff;
-  background: linear-gradient(135deg, #093b75, #2e66d4);
-  box-shadow: 0 0.38rem 0.9rem rgba(46, 102, 212, 0.24);
+  background: linear-gradient(135deg, var(--brand-badge-start), var(--brand-blue));
+  box-shadow: 0 0.38rem 0.9rem rgba(var(--brand-deep-rgb), 0.24);
 }
 
 .mode-card small,
@@ -575,13 +928,13 @@ body::after {
 .favorite-mode,
 .recording-meta,
 .toolbar-note {
-  color: rgba(47, 53, 66, 0.64);
+  color: rgba(var(--brand-muted-rgb), 0.64);
 }
 
 .mode-card.is-active {
   border-color: var(--brand-blue);
-  box-shadow: 0 18px 34px rgba(46, 102, 212, 0.16);
-  background: linear-gradient(160deg, rgba(46, 102, 212, 0.16), rgba(255, 255, 255, 0.98));
+  box-shadow: 0 18px 34px rgba(var(--brand-deep-rgb), 0.16);
+  background: linear-gradient(160deg, rgba(var(--brand-deep-rgb), 0.16), rgba(var(--brand-paper-rgb), 0.98));
 }
 
 .source-panel {
@@ -592,19 +945,16 @@ body::after {
   grid-area: status;
 }
 
-.media-panel {
-  grid-area: media;
-}
-
 .artwork-panel {
   grid-area: artwork;
   display: grid;
-  justify-items: center;
-  align-items: start;
+  gap: 1rem;
 }
 
-.favorites-panel {
-  grid-area: favorites;
+.artwork-stage {
+  width: 100%;
+  display: grid;
+  justify-items: center;
 }
 
 .artwork-shell {
@@ -617,9 +967,9 @@ body::after {
   overflow: hidden;
   border: 1px solid var(--brand-line);
   background:
-    radial-gradient(circle at top left, rgba(46, 102, 212, 0.22), transparent 55%),
-    linear-gradient(145deg, rgba(16, 33, 75, 0.94), rgba(46, 102, 212, 0.86));
-  box-shadow: 0 20px 42px rgba(16, 33, 75, 0.18);
+    radial-gradient(circle at top left, rgba(var(--brand-deep-rgb), 0.22), transparent 55%),
+    linear-gradient(145deg, rgba(var(--brand-dark-rgb), 0.94), rgba(var(--brand-deep-rgb), 0.86));
+  box-shadow: 0 20px 42px rgba(var(--brand-dark-rgb), 0.18);
 }
 
 .media-artwork,
@@ -644,7 +994,7 @@ body::after {
   font-family: "Arial Narrow", "Franklin Gothic Medium", "Trebuchet MS", sans-serif;
   font-size: clamp(2.4rem, 6vw, 4rem);
   letter-spacing: 0.16em;
-  color: rgba(255, 255, 255, 0.92);
+  color: rgba(var(--brand-paper-rgb), 0.92);
 }
 
 .media-copy {
@@ -657,7 +1007,7 @@ body::after {
   border-radius: 1.2rem;
   padding: 0.95rem 1rem;
   border: 1px solid var(--brand-line);
-  background: linear-gradient(155deg, rgba(46, 102, 212, 0.08), rgba(255, 255, 255, 0.96));
+  background: linear-gradient(155deg, rgba(var(--brand-deep-rgb), 0.08), rgba(var(--brand-paper-rgb), 0.96));
 }
 
 .media-line strong {
@@ -668,7 +1018,7 @@ body::after {
 .media-line-wide p {
   margin: 0;
   min-height: 3.2rem;
-  color: rgba(47, 53, 66, 0.82);
+  color: rgba(var(--brand-muted-rgb), 0.82);
   line-height: 1.5;
 }
 
@@ -694,14 +1044,24 @@ body::after {
   display: block;
 }
 
+.favorites-panel,
 .station-panel,
+.schedule-panel,
 .recordings-panel,
 .configuration-panel {
   grid-column: 1 / -1;
 }
 
+.favorites-panel {
+  grid-area: favorites;
+}
+
 .station-panel {
   grid-area: stations;
+}
+
+.schedule-panel {
+  grid-area: schedule;
 }
 
 .recordings-panel {
@@ -725,15 +1085,15 @@ body::after {
   border-radius: 999px;
   padding: 0.95rem 1rem;
   font: inherit;
-  background: rgba(255, 255, 255, 0.88);
+  background: rgba(var(--brand-paper-rgb), 0.88);
 }
 
 .scan-progress {
   margin-top: 0.75rem;
-  border: 1px solid rgba(46, 102, 212, 0.18);
+  border: 1px solid rgba(var(--brand-deep-rgb), 0.18);
   border-radius: 1rem;
   padding: 0.82rem 0.95rem;
-  background: linear-gradient(145deg, rgba(46, 102, 212, 0.08), rgba(255, 255, 255, 0.92));
+  background: linear-gradient(145deg, rgba(var(--brand-deep-rgb), 0.08), rgba(var(--brand-paper-rgb), 0.92));
 }
 
 .scan-progress-head {
@@ -741,7 +1101,7 @@ body::after {
   justify-content: space-between;
   gap: 1rem;
   align-items: center;
-  color: rgba(47, 53, 66, 0.72);
+  color: rgba(var(--brand-muted-rgb), 0.72);
   font-size: 0.88rem;
   font-weight: 700;
 }
@@ -751,7 +1111,7 @@ body::after {
   height: 0.72rem;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(46, 102, 212, 0.13);
+  background: rgba(var(--brand-deep-rgb), 0.13);
 }
 
 .scan-progress-track span {
@@ -787,7 +1147,7 @@ body::after {
 
 .station-item.is-active {
   border-color: var(--brand-blue);
-  box-shadow: inset 0 0 0 1px rgba(46, 102, 212, 0.26);
+  box-shadow: inset 0 0 0 1px rgba(var(--brand-deep-rgb), 0.26);
 }
 
 .station-main,
@@ -817,9 +1177,9 @@ body::after {
   padding: 0.45rem 0.7rem;
   border-radius: 999px;
   border: 1px solid var(--brand-line);
-  background: rgba(255, 255, 255, 0.82);
+  background: rgba(var(--brand-paper-rgb), 0.82);
   cursor: pointer;
-  color: rgba(47, 53, 66, 0.42);
+  color: rgba(var(--brand-muted-rgb), 0.42);
 }
 
 .station-favorite.is-favorite {
@@ -850,8 +1210,8 @@ body::after {
   grid-column: 1 / -1;
   border-radius: 1.15rem;
   padding: 1rem;
-  background: linear-gradient(155deg, rgba(46, 102, 212, 0.08), rgba(255, 255, 255, 0.96));
-  color: rgba(47, 53, 66, 0.68);
+  background: linear-gradient(155deg, rgba(var(--brand-deep-rgb), 0.08), rgba(var(--brand-paper-rgb), 0.96));
+  color: rgba(var(--brand-muted-rgb), 0.68);
 }
 
 .reveal {
@@ -889,12 +1249,12 @@ body::after {
   .dashboard {
     grid-template-columns: 1fr;
     grid-template-areas:
-      "media"
       "artwork"
       "favorites"
       "status"
       "source"
       "stations"
+      "schedule"
       "recordings"
       "configuration";
   }
@@ -934,7 +1294,6 @@ body::after {
   .audio-output-head,
   .audio-output-actions,
   .hero-control-bar,
-  .hero-link-row,
   .status-line,
   .toggle-row,
   .volume-strip,
@@ -948,6 +1307,15 @@ body::after {
 
   .configuration-grid {
     grid-template-columns: 1fr;
+  }
+
+  .schedule-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .schedule-actions .btn {
+    width: 100%;
   }
 
   .stats-grid,

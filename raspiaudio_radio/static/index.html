@@ -11,49 +11,29 @@
     <div class="page-shell">
       <header class="hero panel reveal">
         <div class="hero-copy">
-          <p class="eyebrow">Raspiaudio Local Control</p>
-          <h1>Digital Radio for Raspberry Pi</h1>
-          <div class="hero-link-row">
-            <a class="hero-link" href="https://github.com/RASPIAUDIOadmin/Digital-Radio-for-Raspberry-Pi" target="_blank" rel="noopener">
-              View the project on GitHub
-            </a>
-            <a class="hero-link" href="https://raspiaudio.com/product/digital-radio/" target="_blank" rel="noopener">
-              Buy the product
-            </a>
+          <div class="hero-head-row">
+            <h1>Digital Radio for Raspberry Pi</h1>
+            <div class="view-toggle">
+              <span class="view-toggle-label">Simple</span>
+              <label class="view-switch" for="advancedViewToggle">
+                <input type="checkbox" id="advancedViewToggle" role="switch" aria-label="Toggle advanced view" />
+                <span class="view-switch-track"><span class="view-switch-thumb"></span></span>
+              </label>
+              <span class="view-toggle-label">Advanced</span>
+            </div>
           </div>
-          <div class="hero-actions">
+          <div class="hero-actions" data-view="advanced">
             <button id="scanButton" class="btn btn-primary">Scan stations</button>
             <button id="restartServerButton" class="btn btn-secondary">Restart server</button>
             <button id="stopServerButton" class="btn btn-danger">Stop server</button>
           </div>
-          <div id="spiSetupCard" class="i2s-setup-card" hidden>
+          <div id="spiSetupCard" class="i2s-setup-card" data-view="advanced" hidden>
             <strong>SPI interface disabled</strong>
             <small id="spiSetupText">The SI4689 radio chip needs SPI control. Enable SPI and reboot the Raspberry Pi.</small>
             <button id="spiInstallButton" class="btn btn-secondary" type="button">Enable SPI</button>
           </div>
-          <section class="audio-output-card" aria-labelledby="audioOutputTitle">
-            <div class="audio-output-head">
-              <div>
-                <p class="eyebrow">Audio output</p>
-                <h2 id="audioOutputTitle">Choose where to listen</h2>
-              </div>
-              <span id="browserOutputState" class="count-pill">Analog</span>
-            </div>
-            <div class="audio-output-actions" role="group" aria-label="Audio output mode">
-              <button id="analogOutputButton" class="btn btn-ghost" type="button">Analog output</button>
-              <button id="browserOutputButton" class="btn btn-accent" type="button">Browser output</button>
-            </div>
-            <audio id="browserAudioPlayer" class="browser-audio-player" preload="none"></audio>
-            <small id="browserOutputHint">Analog output uses the onboard DAC, jack and amplifier. Browser output uses the local PCM WAV stream.</small>
-            <div id="i2sSetupCard" class="i2s-setup-card" hidden>
-              <strong>I2S recording device not found</strong>
-              <small id="i2sSetupText">Browser output and local recording need the si4689_i2s capture overlay.</small>
-              <button id="i2sInstallButton" class="btn btn-secondary" type="button">Install I2S capture config</button>
-            </div>
-          </section>
           <div class="hero-control-bar">
             <div class="hero-volume">
-              <span id="volumeLabel" class="count-pill">0 / 63</span>
               <div class="volume-strip hero-volume-strip">
                 <button id="volumeDownButton" class="btn btn-ghost">-</button>
                 <input id="volumeSlider" type="range" min="0" max="63" step="1" value="0" />
@@ -67,9 +47,18 @@
         </div>
         <div class="hero-live">
           <div id="statusBadge" class="status-badge status-idle">Idle</div>
-          <div class="signal-ring">
-            <span id="signalScore">0</span>
-            <small>%</small>
+          <div class="signal-meter" role="img" aria-label="Signal strength">
+            <div class="signal-bars">
+              <span class="signal-bar"></span>
+              <span class="signal-bar"></span>
+              <span class="signal-bar"></span>
+              <span class="signal-bar"></span>
+              <span class="signal-bar"></span>
+            </div>
+            <div class="signal-readout">
+              <span id="signalScore">0</span>
+              <small>%</small>
+            </div>
           </div>
           <div class="hero-now">
             <span class="meta-label">Now playing</span>
@@ -79,8 +68,24 @@
         </div>
       </header>
 
+      <div class="section-filter" role="group" aria-label="Show one section at a time">
+        <button class="section-filter-btn" type="button" data-filter-key="favorites">Favorites</button>
+        <button class="section-filter-btn" type="button" data-filter-key="stations">Stations</button>
+        <button class="section-filter-btn" type="button" data-filter-key="schedule">Scheduling</button>
+        <button class="section-filter-btn" type="button" data-filter-key="status" data-view="advanced">Live status</button>
+        <button class="section-filter-btn" type="button" data-filter-key="source" data-view="advanced">Source mode</button>
+        <button class="section-filter-btn" type="button" data-filter-key="recordings" data-view="advanced">Recordings</button>
+        <button class="section-filter-btn" type="button" data-filter-key="configuration" data-view="advanced">Configuration</button>
+      </div>
+
       <main class="dashboard">
-        <section class="panel media-panel reveal delay-1">
+        <section class="panel artwork-panel reveal delay-1">
+          <div class="artwork-stage">
+            <div class="artwork-shell">
+              <img id="mediaArtwork" class="media-artwork slideshow-element" alt="Radio artwork" hidden />
+              <div id="mediaArtworkFallback" class="media-artwork-fallback slideshow-element">DAB</div>
+            </div>
+          </div>
           <div class="section-head">
             <div>
               <p class="eyebrow">Now Playing Details</p>
@@ -104,18 +109,11 @@
           </div>
           <div class="status-line media-foot">
             <span id="mediaUpdated">No metadata received yet.</span>
-            <span id="mediaHint">Waiting for artwork from the current station.</span>
+            <span id="mediaHint" class="slideshow-element">Waiting for artwork from the current station.</span>
           </div>
         </section>
 
-        <section class="panel artwork-panel reveal delay-1">
-          <div class="artwork-shell">
-            <img id="mediaArtwork" class="media-artwork" alt="Radio artwork" hidden />
-            <div id="mediaArtworkFallback" class="media-artwork-fallback">DAB</div>
-          </div>
-        </section>
-
-        <section class="panel status-panel reveal delay-1">
+        <section class="panel status-panel reveal delay-1" data-view="advanced" data-filter-key="status">
           <div class="section-head">
             <div>
               <p class="eyebrow">Live status</p>
@@ -147,7 +145,7 @@
           <div id="errorLine" class="error-line"></div>
         </section>
 
-        <section class="panel source-panel reveal delay-1">
+        <section class="panel source-panel reveal delay-1" data-view="advanced" data-filter-key="source">
           <div class="section-head">
             <div>
               <p class="eyebrow">Source mode</p>
@@ -171,7 +169,7 @@
           </div>
         </section>
 
-        <section class="panel favorites-panel reveal delay-2">
+        <section class="panel favorites-panel reveal delay-2" data-filter-key="favorites">
           <div class="section-head">
             <div>
               <p class="eyebrow">Favorites</p>
@@ -182,7 +180,7 @@
           <div id="favoriteList" class="favorite-list"></div>
         </section>
 
-        <section class="panel station-panel reveal delay-2">
+        <section class="panel station-panel reveal delay-2" data-filter-key="stations">
           <div class="section-head">
             <div>
               <p class="eyebrow">Stations</p>
@@ -213,7 +211,7 @@
           <div id="stationList" class="station-list"></div>
         </section>
 
-        <section class="panel recordings-panel reveal delay-3">
+        <section class="panel recordings-panel reveal delay-3" data-view="advanced" data-filter-key="recordings">
           <div class="section-head">
             <div>
               <p class="eyebrow">Recordings</p>
@@ -224,13 +222,134 @@
           <div id="recordingList" class="recording-list"></div>
         </section>
 
-        <section class="panel configuration-panel reveal delay-3">
+        <section class="panel schedule-panel reveal delay-3" data-filter-key="schedule">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Scheduling</p>
+              <h2>Daily quiet hours</h2>
+            </div>
+            <span id="scheduleStatePill" class="count-pill">Off</span>
+          </div>
+          <p class="schedule-hint">
+            Mute the radio automatically for a set period each day. Every day gets its own on/off switch and time window,
+            so a weekday quiet period doesn't have to match the weekend.
+          </p>
+          <div class="schedule-table-wrap">
+            <table class="schedule-table">
+              <thead>
+                <tr>
+                  <th scope="col">Day</th>
+                  <th scope="col">Mute from</th>
+                  <th scope="col">Until</th>
+                  <th scope="col">On</th>
+                </tr>
+              </thead>
+              <tbody id="scheduleTableBody">
+                <tr data-day="mon">
+                  <th scope="row">Monday</th>
+                  <td><input type="time" step="60" class="schedule-start" /></td>
+                  <td><input type="time" step="60" class="schedule-end" /></td>
+                  <td><input type="checkbox" role="switch" class="schedule-enabled" aria-label="Enable quiet hours on Monday" /></td>
+                </tr>
+                <tr data-day="tue">
+                  <th scope="row">Tuesday</th>
+                  <td><input type="time" step="60" class="schedule-start" /></td>
+                  <td><input type="time" step="60" class="schedule-end" /></td>
+                  <td><input type="checkbox" role="switch" class="schedule-enabled" aria-label="Enable quiet hours on Tuesday" /></td>
+                </tr>
+                <tr data-day="wed">
+                  <th scope="row">Wednesday</th>
+                  <td><input type="time" step="60" class="schedule-start" /></td>
+                  <td><input type="time" step="60" class="schedule-end" /></td>
+                  <td><input type="checkbox" role="switch" class="schedule-enabled" aria-label="Enable quiet hours on Wednesday" /></td>
+                </tr>
+                <tr data-day="thu">
+                  <th scope="row">Thursday</th>
+                  <td><input type="time" step="60" class="schedule-start" /></td>
+                  <td><input type="time" step="60" class="schedule-end" /></td>
+                  <td><input type="checkbox" role="switch" class="schedule-enabled" aria-label="Enable quiet hours on Thursday" /></td>
+                </tr>
+                <tr data-day="fri">
+                  <th scope="row">Friday</th>
+                  <td><input type="time" step="60" class="schedule-start" /></td>
+                  <td><input type="time" step="60" class="schedule-end" /></td>
+                  <td><input type="checkbox" role="switch" class="schedule-enabled" aria-label="Enable quiet hours on Friday" /></td>
+                </tr>
+                <tr data-day="sat">
+                  <th scope="row">Saturday</th>
+                  <td><input type="time" step="60" class="schedule-start" /></td>
+                  <td><input type="time" step="60" class="schedule-end" /></td>
+                  <td><input type="checkbox" role="switch" class="schedule-enabled" aria-label="Enable quiet hours on Saturday" /></td>
+                </tr>
+                <tr data-day="sun">
+                  <th scope="row">Sunday</th>
+                  <td><input type="time" step="60" class="schedule-start" /></td>
+                  <td><input type="time" step="60" class="schedule-end" /></td>
+                  <td><input type="checkbox" role="switch" class="schedule-enabled" aria-label="Enable quiet hours on Sunday" /></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="schedule-actions">
+            <button id="scheduleApplyAllButton" class="btn btn-ghost" type="button">Copy Monday's times to every day</button>
+            <button id="scheduleSaveButton" class="btn btn-primary" type="button">Save schedule</button>
+          </div>
+          <div class="status-line">
+            <span id="scheduleStatusText">Quiet hours are off.</span>
+            <span id="scheduleDirtyHint" class="toolbar-note" hidden>Unsaved changes</span>
+          </div>
+        </section>
+
+        <section class="panel configuration-panel reveal delay-3" data-view="advanced" data-filter-key="configuration">
           <div class="section-head">
             <div>
               <p class="eyebrow">Configuration</p>
               <h2>Device options</h2>
             </div>
           </div>
+          <section class="audio-output-card" aria-labelledby="audioOutputTitle">
+            <div class="audio-output-head">
+              <div>
+                <p class="eyebrow">Audio output</p>
+                <h2 id="audioOutputTitle">Choose where to listen</h2>
+              </div>
+              <span id="browserOutputState" class="count-pill">Analog</span>
+            </div>
+            <div class="audio-output-actions" role="group" aria-label="Audio output mode">
+              <button id="analogOutputButton" class="btn btn-ghost" type="button">Analog output</button>
+              <button id="browserOutputButton" class="btn btn-accent" type="button">Browser output</button>
+            </div>
+            <audio id="browserAudioPlayer" class="browser-audio-player" preload="none"></audio>
+            <small id="browserOutputHint">Analog output uses the onboard DAC, jack and amplifier. Browser output uses the local PCM WAV stream.</small>
+            <div id="i2sSetupCard" class="i2s-setup-card" hidden>
+              <strong>I2S recording device not found</strong>
+              <small id="i2sSetupText">Browser output and local recording need the si4689_i2s capture overlay.</small>
+              <button id="i2sInstallButton" class="btn btn-secondary" type="button">Install I2S capture config</button>
+            </div>
+          </section>
+          <section class="theme-card" aria-labelledby="themeCardTitle">
+            <div class="audio-output-head">
+              <div>
+                <p class="eyebrow">Appearance</p>
+                <h2 id="themeCardTitle">Colour theme</h2>
+              </div>
+            </div>
+            <small>Changes the colour palette across the whole dashboard. Saved on this device only.</small>
+            <div class="theme-swatches" role="group" aria-label="Colour theme">
+              <button class="theme-swatch" type="button" data-theme-choice="blue" aria-pressed="true">
+                <span class="theme-swatch-dot theme-swatch-dot--blue"></span>
+                Blue
+              </button>
+              <button class="theme-swatch" type="button" data-theme-choice="red" aria-pressed="false">
+                <span class="theme-swatch-dot theme-swatch-dot--red"></span>
+                Red
+              </button>
+              <button class="theme-swatch" type="button" data-theme-choice="green" aria-pressed="false">
+                <span class="theme-swatch-dot theme-swatch-dot--green"></span>
+                Green
+              </button>
+            </div>
+          </section>
           <div class="configuration-grid">
             <label class="toggle-card" for="oledToggle">
               <span class="toggle-copy">
@@ -245,6 +364,13 @@
                 <small id="systemAutostartText">Enable the `raspiaudio-radio.service` unit for the next Raspberry Pi boot.</small>
               </span>
               <input id="systemAutostartToggle" type="checkbox" role="switch" aria-label="Start server automatically on next boot" />
+            </label>
+            <label class="toggle-card" for="slideshowToggle">
+              <span class="toggle-copy">
+                <strong>Show slideshow</strong>
+                <small>Display the DAB slideshow image and its status hint under Now Playing. Off by default since most stations don't broadcast one - turn this on if yours do.</small>
+              </span>
+              <input id="slideshowToggle" type="checkbox" role="switch" aria-label="Show DAB slideshow image" />
             </label>
           </div>
         </section>
