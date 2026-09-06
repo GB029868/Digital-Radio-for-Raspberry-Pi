@@ -108,7 +108,10 @@ You should see `/dev/spidev0.0` and `/dev/spidev0.1`.
 - AM
 - AM HD
 - local Web UI to scan, browse, tune, change volume, manage favorites, and handle recordings
+- per-day scheduled quiet hours that automatically mute and unmute the radio
 - selectable audio output from the Web UI: analog output on the shield or direct browser playback
+- Simple / Advanced view with a section filter to show one dashboard panel at a time
+- blue / red / green colour theme, saved per browser
 - CLI to control the backend from the terminal or integrate the radio into your own software
 - direct HTTP stream URLs for VLC, a browser, Music Assistant, or any compatible network player
 - analog audio output on the shield
@@ -125,6 +128,41 @@ You should see `/dev/spidev0.0` and `/dev/spidev0.1`.
 - AM loop antenna connection support
 - amplifier enable on `GPIO17`
 - local recordings list in the browser
+
+## Web UI customizations in this fork
+
+This fork adds several Web UI features on top of the upstream project:
+
+- **Scheduling**
+  set per-day quiet-hours windows that automatically mute and unmute the
+  radio at fixed times, persisted to `schedule.json` across reboots and
+  managed from the Scheduling panel.
+- **Simple / Advanced view**
+  a toggle at the top of the page. Advanced view adds the more
+  hardware/debug-oriented panels (Live status, Source, Recordings,
+  Configuration) alongside the everyday ones; Simple view hides them.
+- **Section filter bar**
+  buttons for Favourites, Stations, Scheduling, and the Advanced-only
+  panels show exactly one dashboard panel at a time instead of a long
+  scrolling page. With none selected, the Now Playing artwork panel shows
+  instead. Works the same way in both view modes.
+- **Favourites panel**
+  a full toggle panel alongside Stations and Scheduling, in both view
+  modes.
+- **Signal bars**
+  a live, phone-style signal strength indicator driven by the tuner's
+  actual signal quality reading.
+- **Show slideshow toggle**
+  off by default, under Configuration. Many DAB multiplexes never
+  broadcast MOT slideshow images, so leaving this on for a station that
+  doesn't send one just shows an empty placeholder; switch it on per
+  station if yours does broadcast slideshow data.
+- **Colour theme switcher**
+  under Configuration: blue (default), red, or green, applied across the
+  whole UI and saved per browser via `localStorage`.
+- **Audio Output card**
+  moved into the Configuration panel, alongside the other device-level
+  settings.
 
 ## Why this project
 
@@ -146,11 +184,16 @@ It gives you:
 - station scan
 - station selection
 - favorites
+- scheduled quiet hours, per day of the week
 - amplifier on / off
 - volume control
 - recording controls
 - recordings browser
+- Simple / Advanced view with a section filter to show one panel at a time
+- a colour theme (blue, red, or green)
 - a simple radio workflow directly from a browser on the local network
+
+See [Web UI customizations in this fork](#web-ui-customizations-in-this-fork) for details on the scheduling, view, and theming features.
 
 Start the server on the Raspberry Pi:
 
