@@ -8,9 +8,16 @@ fm_scan.txt
 hd_scan.txt
 am_scan.txt
 am_hd_scan.txt
+# Cached DAB scan and live server state, written by `serve` on the Pi. Keep
+# them out of git: the scan cache is per-location and the state file changes
+# on every restart.
+full_scan.txt
+runtime_state.json
 eeprom/build/
 eeprom/*.dtbo
 eeprom/*.eep
 # Per-machine TLS material, including a private key. Regenerate with
 # tools/new_dev_cert.ps1 rather than committing it.
 Certificate/
+# Local editor/agent launch configs, machine-specific and per-developer.
+.claude/
