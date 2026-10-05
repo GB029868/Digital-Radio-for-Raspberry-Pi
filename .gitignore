@@ -11,3 +11,6 @@ am_hd_scan.txt
 eeprom/build/
 eeprom/*.dtbo
 eeprom/*.eep
+# Per-machine TLS material, including a private key. Regenerate with
+# tools/new_dev_cert.ps1 rather than committing it.
+Certificate/

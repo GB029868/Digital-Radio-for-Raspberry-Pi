@@ -77,6 +77,9 @@ Use `sudo` so the backend can access Raspberry Pi hardware and, when needed, upd
 
 If you are already on the Raspberry Pi, this is enough to get the Web UI and the CLI backend running.
 
+Browsers call an `http://` page "Not secure". To serve the Web UI over HTTPS as
+well, see [HTTPS for the Web UI](#https-for-the-web-ui).
+
 ## Manual SPI setup
 
 The Web UI can enable SPI automatically. Use this manual method only if you prefer to configure the Raspberry Pi yourself, or if the automatic helper cannot update the boot config.
@@ -473,6 +476,77 @@ To see all available commands:
 python radio.py --help
 ```
 
+## HTTPS for the Web UI
+
+Browsers label a plain `http://` page **Not secure**, and some features (service
+workers, clipboard access, camera/mic permissions) are blocked outright on
+insecure origins. This server can serve HTTPS on a second port *alongside* the
+plain HTTP one, so nothing that relies on `http://` today breaks:
+
+| Port | Protocol | Used by |
+| --- | --- | --- |
+| 8686 | HTTP | `radio.py` CLI, m3u playlists, VLC/Music Assistant and anything else that fetches a stream URL |
+| 8687 | HTTPS | browsing to the Web UI, where the padlock and full feature set matter |
+
+Both listeners share one backend and one stream lock, so a stream started over
+HTTPS cancels the one already running over HTTP, and the Web UI's stop/restart
+buttons shut down both.
+
+Start with HTTPS enabled:
+
+```bash
+sudo python3 radio.py serve --port 8686 --https-port 8687
+```
+
+The certificate and key default to `Certificate/workspaceradio.pem` and
+`Certificate/workspaceradio-key.pem`; override with `--cert` and `--key`. If the
+certificate is missing or the HTTPS port is taken, the server prints why and
+carries on serving plain HTTP rather than failing to start. The installed
+systemd unit mirrors the command line it was created from, so enabling autostart
+*after* adding `--https-port 8687` keeps HTTPS across reboots.
+
+### Generating the certificate
+
+`Certificate/` is per-machine and not committed to git, because it contains a
+private key. Generate it on your development machine with
+[mkcert](https://github.com/FiloSottile/mkcert) — the same development CA the
+timetracker uses, so `rootCA.pem` here is byte-identical to the one in that
+project and any machine already set up for the timetracker trusts it already:
+
+```powershell
+.\tools\new_dev_cert.ps1 -PiHost workspaceradio.local -PiHost 192.168.1.148 -InstallCa
+```
+
+The script resolves the names you pass, adds `localhost`, `127.0.0.1`, `::1` and
+`<alias>.local`, then writes `rootCA.pem`, `workspaceradio.pem` and
+`workspaceradio-key.pem` into `Certificate/`.
+
+**The names in the certificate must match the name in the browser's address
+bar.** That is the usual reason a trusted CA still shows a warning: reaching the
+Pi at a new IP, or a new hostname, needs a new certificate. Rerun the script and
+copy the new files across whenever that happens.
+
+Copy the leaf certificate and key to the Pi, and trust the CA on each device
+that opens the UI:
+
+```bash
+scp Certificate\workspaceradio.pem Certificate\workspaceradio-key.pem <pi>:~/Workspaceradio/Certificate/
+```
+
+- **Windows**
+  `mkcert -install` (the `-InstallCa` switch above) installs the CA, or
+  double-click `rootCA.pem` → Install Certificate → Local Machine → Trusted
+  Root Certification Authorities.
+- **Raspberry Pi (for local CLI/scripts that speak HTTPS)**
+  `sudo cp rootCA.pem /usr/local/share/ca-certificates/ && sudo update-ca-certificates`
+- **Phone or tablet**
+  install `rootCA.pem`, then also enable it for Wi-Fi/VPN under *user
+  credentials* in the security settings — Android and iOS treat that as a
+  separate opt-in, and skip it silently otherwise.
+
+Only `rootCA.pem` is needed by clients. Keep `workspaceradio-key.pem` on the Pi
+and out of version control.
+
 ## Repository layout
 
 - `radio.py`
@@ -481,6 +555,8 @@ python radio.py --help
   shared backend, HTTP server, and Web UI
 - `firmwares/`
   firmware and patch files used by the radio backend
+- `tools/new_dev_cert.ps1`
+  issues the HTTPS certificate and copies out the CA to trust on clients
 - `legacy/`
   older low-level scripts kept for reference
 

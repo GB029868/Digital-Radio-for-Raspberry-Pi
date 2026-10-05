@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 DEFAULT_URL = os.environ.get("RASPIAUDIO_RADIO_URL", "http://127.0.0.1:8686")
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FW_ROOT = REPO_ROOT / "firmwares"
+CERT_DIR = REPO_ROOT / "Certificate"
 MODE_CHOICES = ["dab", "fmhd", "amhd", "fm", "hd", "am", "am_hd"]
 
 
@@ -179,6 +180,24 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--host", default="0.0.0.0", help="HTTP bind address (default: 0.0.0.0)")
     serve.add_argument("--port", type=int, default=8686, help="HTTP port (default: 8686)")
     serve.add_argument("--alias", default="piradio", help="Suggested local network alias to display at startup")
+    serve.add_argument(
+        "--https-port",
+        type=int,
+        default=0,
+        help="Also serve HTTPS on this port using --cert/--key (default: 0 = HTTPS disabled, HTTP only)",
+    )
+    serve.add_argument(
+        "--cert",
+        type=Path,
+        default=CERT_DIR / "workspaceradio.pem",
+        help=f"Certificate for --https-port (default: {CERT_DIR / 'workspaceradio.pem'})",
+    )
+    serve.add_argument(
+        "--key",
+        type=Path,
+        default=CERT_DIR / "workspaceradio-key.pem",
+        help=f"Private key for --https-port (default: {CERT_DIR / 'workspaceradio-key.pem'})",
+    )
     serve.add_argument("--patch", type=Path, default=FW_ROOT / "rom00_patch.016.bin")
     serve.add_argument("--mini-patch", type=Path, default=FW_ROOT / "rom00_patch_mini.003.bin")
     serve.add_argument("--dab-fw", type=Path, default=FW_ROOT / "dab_radio_6_0_9.bin")
@@ -312,7 +331,7 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     if args.command == "serve":
         from .backend import RadioConfig
-        from .server import run_server
+        from .server import TlsConfig, run_server
 
         config = RadioConfig(
             patch_path=args.patch.resolve(),
@@ -365,7 +384,14 @@ def main(argv: Optional[List[str]] = None) -> None:
             default_mode=args.mode,
             record_device=args.record_device,
         )
-        run_server(config=config, host=args.host, port=args.port, alias=args.alias)
+        tls = None
+        if args.https_port:
+            tls = TlsConfig(
+                port=args.https_port,
+                certfile=args.cert.resolve(),
+                keyfile=args.key.resolve(),
+            )
+        run_server(config=config, host=args.host, port=args.port, alias=args.alias, tls=tls)
         return
 
     if args.command == "boot":

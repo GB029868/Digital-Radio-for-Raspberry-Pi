@@ -7,13 +7,15 @@ import os
 import re
 import select
 import socket
+import ssl
 import subprocess
 import threading
 import time
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import sys
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from .backend import RadioBackend, RadioConfig, _mode_token
@@ -25,12 +27,78 @@ _ARECORD_AVAILABLE_FORMAT_RE = re.compile(r"^\s*-\s*(?P<format>[A-Z0-9_]+)\s*$")
 _UTF8_TEXT_SUFFIXES = {".css", ".html", ".js", ".json", ".mjs", ".svg", ".txt", ".xml"}
 
 
+@dataclass(frozen=True)
+class TlsConfig:
+    port: int
+    certfile: Path
+    keyfile: Path
+
+    def describe(self) -> str:
+        return f"https (port {self.port}, cert {self.certfile.name})"
+
+
 class RadioHTTPServer(ThreadingHTTPServer):
-    def __init__(self, server_address: tuple[str, int], backend: RadioBackend) -> None:
+    def __init__(
+        self,
+        server_address: tuple[str, int],
+        backend: RadioBackend,
+        stream_lock: Optional[threading.RLock] = None,
+        peer_servers: Optional[List["RadioHTTPServer"]] = None,
+    ) -> None:
         self.backend = backend
-        self.stream_lock = threading.RLock()
+        # The radio hardware allows exactly one capture/stream pipeline at a
+        # time. When both the HTTP and the HTTPS listener are running they are
+        # separate RadioHTTPServer instances sharing one backend, so they must
+        # also share this lock or a stream started over HTTPS would not cancel
+        # the one already streaming over HTTP.
+        self.stream_lock = stream_lock if stream_lock is not None else threading.RLock()
+        self.peer_servers: List["RadioHTTPServer"] = peer_servers if peer_servers is not None else []
+        self._serving = False
         self.active_stream_processes: tuple[subprocess.Popen[bytes], ...] = ()
         super().__init__(server_address, RadioRequestHandler)
+
+    @property
+    def scheme(self) -> str:
+        return "https" if isinstance(self.socket, ssl.SSLSocket) else "http"
+
+    def serve_forever_tracked(self) -> None:
+        # shutdown() blocks until the serve_forever loop has exited, so only
+        # ask a listener to shut down once it is actually looping. The HTTPS
+        # listener runs in a thread and may not have started yet when a stop
+        # request arrives.
+        self._serving = True
+        try:
+            self.serve_forever()
+        finally:
+            self._serving = False
+
+    def shutdown_all(self) -> None:
+        for server in [self, *self.peer_servers]:
+            if server._serving:
+                with contextlib.suppress(Exception):
+                    server.shutdown()
+
+    def close_all(self) -> None:
+        for server in [self, *self.peer_servers]:
+            with contextlib.suppress(Exception):
+                server.server_close()
+
+    def handle_error(self, request, client_address) -> None:
+        # A client that disconnects mid-response (closed tab, refreshed the
+        # page, or gave up on a status/scan-progress poll) surfaces here as
+        # BrokenPipeError/ConnectionResetError while we're still writing the
+        # reply. That's routine, not a server bug, so skip the default
+        # traceback dump for it and only log genuinely unexpected errors.
+        exc = sys.exc_info()[1]
+        if isinstance(exc, ConnectionError):
+            return
+        # A failed TLS handshake lands here too: anything that opens the HTTPS
+        # port without speaking TLS (an old bookmark, a port scanner, a
+        # health check that assumes plaintext) gets a handshake error rather
+        # than an HTTP response, and that is expected on this port.
+        if isinstance(exc, ssl.SSLError):
+            return
+        super().handle_error(request, client_address)
 
     @staticmethod
     def _stop_process(process: subprocess.Popen[bytes]) -> None:
@@ -230,7 +298,7 @@ class RadioRequestHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/server/stop":
                 self._send_ok({"stopping": True})
-                threading.Thread(target=self.server.shutdown, daemon=True).start()
+                threading.Thread(target=self.server.shutdown_all, daemon=True).start()
                 return
             if parsed.path == "/api/server/restart":
                 self._send_ok({"restarting": True})
@@ -1000,10 +1068,7 @@ def _restart_process(server: RadioHTTPServer) -> None:
         server.backend.close()
     except Exception:
         pass
-    try:
-        server.server_close()
-    except Exception:
-        pass
+    server.close_all()
     argv = [sys.executable, *sys.argv]
     os.execv(sys.executable, argv)
 
@@ -1031,18 +1096,18 @@ def _detect_local_ipv4_addresses() -> List[str]:
     return sorted(addresses)
 
 
-def _startup_urls(host: str, port: int, alias: str) -> List[str]:
-    urls: List[str] = [f"http://127.0.0.1:{port}/"]
+def _startup_urls(host: str, port: int, alias: str, scheme: str = "http") -> List[str]:
+    urls: List[str] = [f"{scheme}://127.0.0.1:{port}/"]
     bind_host = str(host).strip()
     if bind_host not in {"", "0.0.0.0", "::"}:
-        urls.append(f"http://{bind_host}:{port}/")
+        urls.append(f"{scheme}://{bind_host}:{port}/")
     else:
         for ip in _detect_local_ipv4_addresses():
-            urls.append(f"http://{ip}:{port}/")
+            urls.append(f"{scheme}://{ip}:{port}/")
     if alias:
         alias = alias.strip()
         if alias:
-            urls.append(f"http://{alias}.local:{port}/")
+            urls.append(f"{scheme}://{alias}.local:{port}/")
     deduped: List[str] = []
     seen: set[str] = set()
     for url in urls:
@@ -1052,7 +1117,7 @@ def _startup_urls(host: str, port: int, alias: str) -> List[str]:
     return deduped
 
 
-def _print_startup_banner(host: str, port: int, alias: str) -> None:
+def _print_startup_banner(host: str, port: int, alias: str, tls: Optional[TlsConfig] = None) -> None:
     hostname = socket.gethostname()
     print("Raspiaudio radio server started")
     print("Open one of these URLs:")
@@ -1061,20 +1126,81 @@ def _print_startup_banner(host: str, port: int, alias: str) -> None:
     print("Live PCM WAV stream:")
     for url in _startup_urls(host, port, alias):
         print(f"  {url.rstrip('/')}/audio/live.wav")
+    if tls is not None:
+        print("HTTPS is also enabled (browser shows a padlock once rootCA.pem is trusted):")
+        for url in _startup_urls(host, tls.port, alias, scheme="https"):
+            print(f"  {url}")
+        print(f"  certificate: {tls.certfile}")
     if alias:
-        print(f"Suggested network alias: {alias}")
-        print(f"  If your hostname or mDNS alias is set to `{alias}`, try http://{alias}.local:{port}/")
+        alias = alias.strip()
+        if alias:
+            print(f"Suggested network alias: {alias}")
+            print(f"  If your hostname or mDNS alias is set to `{alias}`, try http://{alias}.local:{port}/")
     print(f"Current host name: {hostname}")
 
 
-def run_server(config: RadioConfig, host: str, port: int, alias: str = "piradio") -> None:
-    backend = RadioBackend(config)
-    httpd = RadioHTTPServer((host, port), backend)
+def _build_ssl_context(tls: TlsConfig) -> ssl.SSLContext:
+    for path in (tls.certfile, tls.keyfile):
+        if not Path(path).is_file():
+            raise FileNotFoundError(f"TLS file not found: {path}")
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(certfile=str(tls.certfile), keyfile=str(tls.keyfile))
+    return context
+
+
+def _start_tls_server(
+    host: str,
+    tls: TlsConfig,
+    backend: RadioBackend,
+    stream_lock: threading.RLock,
+    servers: List[RadioHTTPServer],
+) -> RadioHTTPServer:
+    context = _build_ssl_context(tls)
+    server = RadioHTTPServer((host, tls.port), backend, stream_lock=stream_lock, peer_servers=servers)
     try:
-        _print_startup_banner(host, port, alias)
-        httpd.serve_forever()
+        # Wrapping the listening socket makes every accepted connection
+        # TLS-terminated, which is all ThreadingHTTPServer needs: the
+        # request handler code above is unchanged.
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+    except Exception:
+        server.server_close()
+        raise
+    servers.append(server)
+    threading.Thread(target=server.serve_forever_tracked, daemon=True, name="radio-https").start()
+    return server
+
+
+def run_server(
+    config: RadioConfig,
+    host: str,
+    port: int,
+    alias: str = "piradio",
+    tls: Optional[TlsConfig] = None,
+) -> None:
+    backend = RadioBackend(config)
+    stream_lock = threading.RLock()
+    servers: List[RadioHTTPServer] = []
+    httpd = RadioHTTPServer((host, port), backend, stream_lock=stream_lock, peer_servers=servers)
+    servers.append(httpd)
+    if tls is not None:
+        if tls.port == port:
+            httpd.server_close()
+            raise SystemExit(
+                f"--https-port {tls.port} is the same as --port {port}; "
+                "HTTPS needs its own port because the plain HTTP listener stays on --port."
+            )
+        try:
+            _start_tls_server(host, tls, backend, stream_lock, servers)
+        except Exception as exc:
+            # Plain HTTP keeps working, so a missing certificate or a busy
+            # HTTPS port should not stop the radio from serving the UI.
+            print(f"HTTPS listener not started: {exc}")
+    try:
+        _print_startup_banner(host, port, alias, tls)
+        httpd.serve_forever_tracked()
     except KeyboardInterrupt:
         pass
     finally:
+        httpd.shutdown_all()
         backend.close()
-        httpd.server_close()
+        httpd.close_all()
