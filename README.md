@@ -498,6 +498,46 @@ Start with HTTPS enabled:
 sudo python3 radio.py serve --port 8686 --https-port 8687
 ```
 
+### Serving on ports 80 and 443 (this fork's Pi)
+
+The defaults above keep 8686/8687 so a stock install can't collide with anything
+already bound on the Pi. Browsers only hide the port when it is the scheme
+default, so to browse to `workspaceradio.local` with no `:8687` at all, bind the
+standard ports instead. That is what the `raspiaudio-radio.service` unit in this
+fork's Pi does:
+
+```ini
+ExecStart=/usr/bin/python3 /home/wsr_admin/Digital-Radio-for-Raspberry-Pi/radio.py serve --port 80 --https-port 443
+```
+
+Which gives four working URLs, and the first two need no port at all:
+
+| URL | Notes |
+| --- | --- |
+| `http://workspaceradio.local/` | always works, no certificate trust needed |
+| `https://workspaceradio.local/` | needs `rootCA.pem` trusted on the client |
+| `http://192.168.1.148/` | fallback if mDNS resolution fails |
+| `https://192.168.1.148/` | also in the certificate SAN |
+
+Ports below 1024 need root, so the service runs as root and the commands above
+need `sudo`. There is no firewall on this Pi, so nothing further has to allow
+the ports.
+
+To change the ports on a running Pi, edit the unit and reload it:
+
+```bash
+sudo sed -i 's|--port .*|--port 80 --https-port 443|' /etc/systemd/system/raspiaudio-radio.service
+sudo systemctl daemon-reload && sudo systemctl restart raspiaudio-radio.service
+```
+
+Run that over `ssh -t`, or sudo has no terminal to prompt on:
+
+```powershell
+ssh -t wsr_admin@workspaceradio.local "sudo systemctl daemon-reload; sudo systemctl restart raspiaudio-radio.service"
+```
+
+Restarting interrupts playback for a second or two.
+
 The certificate and key default to `Certificate/workspaceradio.pem` and
 `Certificate/workspaceradio-key.pem`; override with `--cert` and `--key`. If the
 certificate is missing or the HTTPS port is taken, the server prints why and
@@ -539,13 +579,59 @@ scp Certificate\workspaceradio.pem Certificate\workspaceradio-key.pem <pi>:~/Wor
   Root Certification Authorities.
 - **Raspberry Pi (for local CLI/scripts that speak HTTPS)**
   `sudo cp rootCA.pem /usr/local/share/ca-certificates/ && sudo update-ca-certificates`
-- **Phone or tablet**
-  install `rootCA.pem`, then also enable it for Wi-Fi/VPN under *user
-  credentials* in the security settings — Android and iOS treat that as a
-  separate opt-in, and skip it silently otherwise.
+- **Android phone or tablet**
+  full steps below, because Android needs the CA trusted in two places.
+- **iPhone or iPad**
+  install the profile, then also enable it for Wi-Fi/VPN under *user
+  credentials* in the security settings.
+
+#### Android, step by step
+
+Android treats a CA you install yourself as *untrusted* until you explicitly
+switch it on, and it does so silently — no warning, just a certificate error in
+the browser. Both steps are required:
+
+1. **Install it.** Get `rootCA.pem` onto the phone (USB cable, or email it to
+   yourself and open the attachment). Then *Settings → Security → More security
+   settings → Encryption & credentials → Install a certificate → CA
+   certificate*. On Android 11 and older the path is *Settings → Security →
+   Encryption & credentials → Install a certificate*. Choose *CA certificate*
+   and pick `rootCA.pem` from Downloads. Note the wording difference — Android
+   wants **CA certificate**, not "VPN and apps".
+2. **Trust it.** Immediately after installing, Android 11+ shows a
+   *Certificate installed* dialog with a **Done** button and a
+   *Turn on Wi-Fi* toggle — tap **Done**. On older versions, go to *Settings →
+   Security → More security settings → Encryption & credentials → User
+   credentials*, tap the installed entry, and flip the switch on. Leaving it off
+   is the single most common reason the warning persists.
+3. **Restart the browser.** Fully close Chrome (clear it from the recents
+   list), then reopen. Chrome caches the trust decision for the session, so an
+   already-open tab keeps showing the warning until it is restarted.
+
+Once `rootCA.pem` is trusted, `https://workspaceradio.local/` loads with no
+warning on the phone. Note that `http://workspaceradio.local/` never needed any
+of this and still works — it just shows "Not secure".
+
+Other apps on the phone only trust a user-installed CA if they opt in. Chrome
+and Firefox do; most native Android apps deliberately do not, so they will keep
+refusing the certificate even after this is set up correctly.
 
 Only `rootCA.pem` is needed by clients. Keep `workspaceradio-key.pem` on the Pi
 and out of version control.
+
+### curl on Windows needs `--ssl-no-revoke`
+
+mkcert issues certificates with no CRL or OCSP responder, because there is
+nothing to revoke. Windows' schannel treats "revocation status is unknown" as a
+hard failure, so verifying a request against the CA fails:
+
+```powershell
+curl.exe --ssl-no-revoke --cacert Certificate\rootCA.pem https://workspaceradio.local/
+```
+
+This is a client quirk, not a server or certificate fault. Browsers, Python and
+`curl` on Linux all handle a missing revocation responder correctly. Only curl
+on Windows needs the flag.
 
 ## Repository layout
 
