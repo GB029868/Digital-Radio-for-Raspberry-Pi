@@ -1084,8 +1084,12 @@ class Si468xDabRadio:
             "valid": bool(reply[5] & 0x01),
             "afc_rail": bool(reply[5] & 0x02),
             "hd_detected": bool(reply[5] & 0x20),
-            "rssi": reply[9],
-            "snr": reply[10],
+            # RSSI and SNR are signed 8-bit values, matching am_rsq_status and
+            # freqoff below. Reading them unsigned turns every negative SNR on an
+            # empty frequency into a large positive number, which makes
+            # _is_fm_analog_ready() accept noise as a valid FM station.
+            "rssi": _signed_byte(reply[9]),
+            "snr": _signed_byte(reply[10]),
             "freqoff": _signed_byte(reply[8]),
             "freq_10khz": readfreq_10khz,
             "freq_khz": readfreq_10khz * 10,
