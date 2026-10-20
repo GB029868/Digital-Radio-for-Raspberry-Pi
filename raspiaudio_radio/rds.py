@@ -74,13 +74,18 @@ _PS_ALLOWED_PUNCTUATION = " &'\"-.,:!?/+#*%"
 
 
 def is_valid_rds_station_name(value: object) -> bool:
-    """Return whether a decoded Program Service name is worth showing.
+    """Return whether a decoded Program Service name is implausible enough to drop.
 
     A PS field assembled out of RDS blocks that passed the chip's block error
     test but decoded to the wrong bytes still looks like text, so it reaches the
-    UI and the scan cache. Real names are short, alphanumeric, and occasionally
-    punctuated; anything carrying characters such as ``^`` or ``¬`` is a decode
-    miss rather than a station.
+    UI and the scan cache. Real names are alphanumeric with the occasional
+    punctuation mark; anything carrying characters such as ``^`` or ``¬`` is a
+    decode miss rather than a station.
+
+    This is a character-content check, so it cannot catch a corrupt assembly
+    that happens to be all letters and digits (a live run produced "aruU"). It
+    is a guard against obvious garbage, not proof that a name is real; repeated
+    assembly in :class:`RdsDecoder` is what covers the rest.
     """
     text = str(value or "")
     if not any(character.isalnum() for character in text):

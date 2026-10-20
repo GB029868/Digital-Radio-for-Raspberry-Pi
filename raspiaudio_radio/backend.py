@@ -1975,9 +1975,42 @@ print(json.dumps({"changed": changed, "missing_added": missing, "backup": backup
         raw_items = load_scan_file(path) or []
         stations = [self._normalize_station(scan_key, raw) for raw in raw_items if isinstance(raw, dict)]
         stations.sort(key=_station_sort_key)
+        removed = self._strip_invalid_station_names_locked(scan_key, stations)
         self._stations[scan_key] = stations
         self._last_scan_count[scan_key] = len(stations)
         self._last_scan_time[scan_key] = path.stat().st_mtime if path.exists() else None
+        if removed:
+            # Persist the cleanup so a corrupt name cannot return on next start.
+            self._save_scan_file_locked(scan_key, stations)
+            print(f"Dropped {removed} invalid RDS station name(s) from {scan_key} scan cache.", flush=True)
+
+    def _strip_invalid_station_names_locked(self, scan_key: str, stations: List[Dict[str, Any]]) -> int:
+        """Drop FM station names that were decoded from corrupt RDS blocks.
+
+        Builds before 65eaddf published any PS value the blocks happened to
+        assemble, so names such as "BBC R1¬," were written into the scan cache
+        and would otherwise outlive the fix. A bad name is discarded rather than
+        repaired: the scan row keeps its frequency label until RDS supplies a
+        name that passes validation.
+        """
+        if scan_key != "fm":
+            return 0
+        removed = 0
+        for station in stations:
+            name = station.get("station_name")
+            if not name or is_valid_rds_station_name(name):
+                continue
+            station.pop("station_name", None)
+            station.pop("label", None)
+            station["label"] = self._default_station_label(
+                scan_key,
+                station["freq_khz"],
+                station.get("program_mask", 0),
+                station.get("hd_available", False),
+                station.get("program_id"),
+            )
+            removed += 1
+        return removed
 
     def _save_scan_file_locked(self, scan_key: str, stations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         path = self._scan_file_for_key(scan_key)
@@ -3149,8 +3182,17 @@ print(json.dumps({"changed": changed, "missing_added": missing, "backup": backup
         return self._radio
 
     def _apply_audio_config_locked(self, radio: Si468xDabRadio) -> None:
+        # The I2S output block is a clock *slave* unless --i2s-master is passed,
+        # so enabling it with "both" (the default) leaves the chip's digital
+        # output armed and waiting on a BCLK/LRCLK that nothing produces until a
+        # capture stream opens. Drive the analog path only while nothing needs
+        # I2S; prepare_live_stream() and _start_recording_locked() each raise the
+        # mode to "i2s"/"both" before they open a capture device.
+        mode = self._audio_out_mode
+        if mode == "both" and not self.config.i2s_master:
+            mode = "analog"
         radio.configure_audio(
-            mode=self._audio_out_mode,
+            mode=mode,
             master=self.config.i2s_master,
             sample_rate=self.config.sample_rate,
             sample_size=self.config.sample_size,

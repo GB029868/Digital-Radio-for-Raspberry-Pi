@@ -298,6 +298,64 @@ class RadioBackendRdsTests(unittest.TestCase):
         self.assertEqual(saved[0][1][0]["label"], "NOSTALGI")
 
 
+class ScanCacheCleanupTests(unittest.TestCase):
+    def _backend(self) -> RadioBackend:
+        backend = object.__new__(RadioBackend)
+        saved = []
+        backend._save_scan_file_locked = lambda key, stations: saved.append((key, stations)) or []
+        backend._saved = saved
+        return backend
+
+    def test_drops_junk_fm_names_left_by_older_builds(self) -> None:
+        backend = self._backend()
+        stations = [
+            {"freq_khz": 98_100, "station_name": "BBC R1¬,", "label": "BBC R1¬,"},
+            {"freq_khz": 98_200, "station_name": "Heart", "label": "Heart"},
+            {"freq_khz": 99_500, "station_name": "BBC ^1", "label": "BBC ^1"},
+        ]
+
+        removed = backend._strip_invalid_station_names_locked("fm", stations)
+
+        self.assertEqual(removed, 2)
+        self.assertEqual(stations[0]["label"], "FM 98.1")
+        self.assertNotIn("station_name", stations[0])
+        self.assertEqual(stations[1]["label"], "Heart")
+        self.assertEqual(stations[1]["station_name"], "Heart")
+        self.assertEqual(stations[2]["label"], "FM 99.5")
+
+    def test_leaves_alphanumeric_corruption_to_the_repeat_rule(self) -> None:
+        # "aruU" appeared live and is all letters, so character content alone
+        # cannot reject it. The decoder's two-pass confirmation is what stops it
+        # being published in the first place.
+        backend = self._backend()
+        stations = [{"freq_khz": 99_500, "station_name": "aruU", "label": "aruU"}]
+
+        removed = backend._strip_invalid_station_names_locked("fm", stations)
+
+        self.assertEqual(removed, 0)
+
+    def test_leaves_other_bands_alone(self) -> None:
+        backend = self._backend()
+        stations = [{"freq_khz": 225_648, "label": "DAB 225648 kHz", "station_name": "¬,"}]
+
+        removed = backend._strip_invalid_station_names_locked("dab", stations)
+
+        self.assertEqual(removed, 0)
+        self.assertEqual(stations[0]["station_name"], "¬,")
+
+    def test_accepts_names_with_real_punctuation(self) -> None:
+        backend = self._backend()
+        stations = [
+            {"freq_khz": 100_000, "station_name": "KISS-FM", "label": "KISS-FM"},
+            {"freq_khz": 101_000, "station_name": "Q102", "label": "Q102"},
+            {"freq_khz": 102_000, "station_name": "BBC R1", "label": "BBC R1"},
+        ]
+
+        removed = backend._strip_invalid_station_names_locked("fm", stations)
+
+        self.assertEqual(removed, 0)
+
+
 class Si468xRdsStatusTests(unittest.TestCase):
     def test_parses_hardware_fifo_reply(self) -> None:
         radio = object.__new__(Si468xDabRadio)
