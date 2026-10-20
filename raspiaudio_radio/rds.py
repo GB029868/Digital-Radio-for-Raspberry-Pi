@@ -69,6 +69,25 @@ def _decode_rds_bytes(values: Iterable[int]) -> str:
     return " ".join("".join(characters).strip().split())
 
 
+# Punctuation broadcasters actually use inside an 8 character PS field.
+_PS_ALLOWED_PUNCTUATION = " &'\"-.,:!?/+#*%"
+
+
+def is_valid_rds_station_name(value: object) -> bool:
+    """Return whether a decoded Program Service name is worth showing.
+
+    A PS field assembled out of RDS blocks that passed the chip's block error
+    test but decoded to the wrong bytes still looks like text, so it reaches the
+    UI and the scan cache. Real names are short, alphanumeric, and occasionally
+    punctuated; anything carrying characters such as ``^`` or ``¬`` is a decode
+    miss rather than a station.
+    """
+    text = str(value or "")
+    if not any(character.isalnum() for character in text):
+        return False
+    return all(character.isalnum() or character in _PS_ALLOWED_PUNCTUATION for character in text)
+
+
 class RdsDecoder:
     """Assemble the most useful IEC 62106/RBDS fields from raw RDS groups."""
 
@@ -77,6 +96,20 @@ class RdsDecoder:
 
     def reset(self) -> None:
         self.program_identification: Optional[int] = None
+        self.groups_decoded = 0
+        self.groups_received = 0
+        self.groups_rejected = 0
+        self.block_error_counts = [0, 0, 0, 0]
+        self.group_type_counts: Dict[str, int] = {}
+        self._reset_program_state()
+
+    def _reset_program_state(self) -> None:
+        """Drop every field that belongs to the current programme identifier.
+
+        Called from :meth:`reset` and again whenever block A names a new
+        programme, so a half collected PS or RT segment from the previous
+        station can never be concatenated with the new one.
+        """
         self.program_type_code: Optional[int] = None
         self.traffic_program = False
         self.traffic_announcement = False
@@ -84,8 +117,6 @@ class RdsDecoder:
         self.radio_text = ""
         self.radio_text_raw = ""
         self.text_ab: Optional[int] = None
-        self.groups_decoded = 0
-        self.group_type_counts: Dict[str, int] = {}
         self.rt_plus_group_type: Optional[int] = None
         self.rt_plus_item_toggle: Optional[int] = None
         self.rt_plus_item_running = False
@@ -93,6 +124,10 @@ class RdsDecoder:
         self._rt_plus_tags: Dict[int, tuple[int, int]] = {}
         self._ps_chars = [" "] * 8
         self._ps_segments = 0
+        self._pending_ps_name: Optional[str] = None
+        self._pending_ps_count = 0
+        self._pending_pty: Optional[int] = None
+        self._pending_pty_count = 0
         self._rt_chars = [" "] * 64
         self._rt_segments = 0
         self._rt_width = 64
@@ -108,17 +143,33 @@ class RdsDecoder:
         block_c = int(group.get("block_c") or 0) & 0xFFFF
         block_d = int(group.get("block_d") or 0) & 0xFFFF
         ble = tuple(int(value) for value in group.get("ble", (0, 0, 0, 0)))
+        self.groups_received += 1
+        if len(ble) == 4:
+            for index, level in enumerate(ble):
+                if level:
+                    self.block_error_counts[index] += 1
         if len(ble) != 4 or ble[1] >= 3:
+            self.groups_rejected += 1
             return False
 
         changed = False
         if ble[0] < 3 and block_a != self.program_identification:
+            if self.program_identification is not None:
+                self._reset_program_state()
             self.program_identification = block_a
             changed = True
 
         pty = (block_b >> 5) & 0x1F
         tp = bool(block_b & (1 << 10))
-        if pty != self.program_type_code:
+        # Block B is where a marginal signal shows up first: the live log had
+        # one station flip between Pop Music, Alarm Test and Religion within
+        # seconds. Only publish a programme type seen twice in a row.
+        if pty != self._pending_pty:
+            self._pending_pty = pty
+            self._pending_pty_count = 1
+        else:
+            self._pending_pty_count += 1
+        if self._pending_pty_count >= 2 and pty != self.program_type_code:
             self.program_type_code = pty
             changed = True
         if tp != self.traffic_program:
@@ -165,9 +216,20 @@ class RdsDecoder:
         if self._ps_segments == 0x0F:
             value = _decode_rds_bytes(ord(char) for char in self._ps_chars)
             self._ps_segments = 0
-            if value and value != self.program_service:
-                self.program_service = value
-                changed = True
+            # One corrupted pass still assembles into something that looks like
+            # text ("BBC R1¬," and "aruU" both appeared live), so a name has to
+            # survive two complete, identical assemblies before it is trusted.
+            # A name we would refuse to show is simply skipped so it cannot
+            # push the real name back to zero.
+            if is_valid_rds_station_name(value):
+                if value == self._pending_ps_name:
+                    self._pending_ps_count += 1
+                else:
+                    self._pending_ps_name = value
+                    self._pending_ps_count = 1
+                if self._pending_ps_count >= 2 and value != self.program_service:
+                    self.program_service = value
+                    changed = True
         return changed
 
     def _consume_radio_text(
@@ -302,6 +364,9 @@ class RdsDecoder:
             "text_raw": self.radio_text_raw,
             "text_ab": self.text_ab,
             "groups_decoded": self.groups_decoded,
+            "groups_received": self.groups_received,
+            "groups_rejected": self.groups_rejected,
+            "block_error_counts": list(self.block_error_counts),
             "group_type_counts": dict(self.group_type_counts),
             "rt_plus": self.rt_plus_group_type is not None,
             "rt_plus_group_type": (

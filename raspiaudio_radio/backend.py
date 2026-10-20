@@ -26,7 +26,7 @@ from legacy.dab_radio_i2c_safe2 import (
     load_scan_file,
     normalize_broadcast_text,
 )
-from raspiaudio_radio.rds import RdsDecoder
+from raspiaudio_radio.rds import RdsDecoder, is_valid_rds_station_name
 
 try:
     import RPi.GPIO as GPIO  # type: ignore
@@ -2488,6 +2488,9 @@ print(json.dumps({"changed": changed, "missing_added": missing, "backup": backup
                 "rds_sync": bool(status.get("rds_sync")),
                 "fifo_lost": fifo_lost,
                 "groups_decoded": decoded.get("groups_decoded"),
+                "groups_received": decoded.get("groups_received"),
+                "groups_rejected": decoded.get("groups_rejected"),
+                "block_error_counts": decoded.get("block_error_counts"),
                 "group_type_counts": decoded.get("group_type_counts"),
                 "rt_plus": decoded.get("rt_plus"),
                 "rt_plus_group_type": decoded.get("rt_plus_group_type"),
@@ -2648,7 +2651,9 @@ print(json.dumps({"changed": changed, "missing_added": missing, "backup": backup
         if station is None or station.get("band") != "fm" or station.get("hd_available"):
             return
         name = normalize_broadcast_text(station_name)
-        if not name:
+        if not name or not is_valid_rds_station_name(name):
+            # The decoder already refuses decoded junk; this is the last gate
+            # before the name is written into the scan cache on disk.
             return
         station["station_name"] = name
         station["label"] = name

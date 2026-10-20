@@ -54,21 +54,137 @@ def _rt_plus_group(
 class RdsDecoderTests(unittest.TestCase):
     def test_assembles_program_service_name(self) -> None:
         decoder = RdsDecoder()
-        for segment, pair in enumerate(("FR", "AN", "CE", "IN")):
+        # A name is only published once the same PS has been assembled twice in
+        # a row, so the station has to send a complete pass more than once.
+        for _ in range(2):
+            for segment, pair in enumerate(("FR", "AN", "CE", "IN")):
+                decoder.consume(
+                    {
+                        "block_a": 0xF123,
+                        "block_b": (10 << 5) | segment,
+                        "block_c": 0,
+                        "block_d": _word(*pair),
+                        "ble": (0, 0, 0, 0),
+                    }
+                )
+
+        snapshot = decoder.snapshot()
+        self.assertEqual(snapshot["station_name"], "FRANCEIN")
+        self.assertEqual(snapshot["program_identification_hex"], "F123")
+        self.assertEqual(snapshot["program_type"], "Pop Music")
+
+    def test_ignores_a_single_corrupted_program_service_pass(self) -> None:
+        decoder = RdsDecoder()
+        # The live log produced "aruU" once and then the real "Heart".
+        for segment, pair in enumerate(("ar", "uU", "  ", "  ")):
             decoder.consume(
                 {
-                    "block_a": 0xF123,
+                    "block_a": 0xC365,
                     "block_b": (10 << 5) | segment,
                     "block_c": 0,
                     "block_d": _word(*pair),
                     "ble": (0, 0, 0, 0),
                 }
             )
+        self.assertIsNone(decoder.snapshot()["station_name"])
+
+        for _ in range(2):
+            for segment, pair in enumerate(("He", "ar", "t ", "  ")):
+                decoder.consume(
+                    {
+                        "block_a": 0xC365,
+                        "block_b": (10 << 5) | segment,
+                        "block_c": 0,
+                        "block_d": _word(*pair),
+                        "ble": (0, 0, 0, 0),
+                    }
+                )
+        self.assertEqual(decoder.snapshot()["station_name"], "Heart")
+
+    def test_rejects_station_name_with_non_broadcast_characters(self) -> None:
+        decoder = RdsDecoder()
+        # The live log published "BBC R1¬," and later "BBC ^1".
+        for _ in range(2):
+            for segment, pair in enumerate(("BB", "C ", "R1", "¬,")):
+                decoder.consume(
+                    {
+                        "block_a": 0xC201,
+                        "block_b": (10 << 5) | segment,
+                        "block_c": 0,
+                        "block_d": _word(*pair),
+                        "ble": (0, 0, 0, 0),
+                    }
+                )
+        self.assertIsNone(decoder.snapshot()["station_name"])
+
+    def test_drops_partial_name_assembly_when_pi_changes(self) -> None:
+        decoder = RdsDecoder()
+        for segment, pair in ((0, "FR"), (1, "AN")):
+            decoder.consume(
+                {
+                    "block_a": 0x1111,
+                    "block_b": (10 << 5) | segment,
+                    "block_c": 0,
+                    "block_d": _word(*pair),
+                    "ble": (0, 0, 0, 0),
+                }
+            )
+        decoder.consume(
+            {
+                "block_a": 0x2222,
+                "block_b": (10 << 5) | 2,
+                "block_c": 0,
+                "block_d": _word("C", "E"),
+                "ble": (0, 0, 0, 0),
+            }
+        )
+        decoder.consume(
+            {
+                "block_a": 0x2222,
+                "block_b": (10 << 5) | 3,
+                "block_c": 0,
+                "block_d": _word("I", "N"),
+                "ble": (0, 0, 0, 0),
+            }
+        )
+        # Without the reset this completes as "FRANCEIN", stitching the old
+        # station's first two segments onto the new station's last two.
+        snapshot = decoder.snapshot()
+        self.assertIsNone(snapshot["station_name"])
+        self.assertEqual(snapshot["program_identification_hex"], "2222")
+
+    def test_waits_for_a_repeated_programme_type(self) -> None:
+        decoder = RdsDecoder()
+
+        def group(pty: int) -> dict:
+            return {
+                "block_a": 0x1234,
+                "block_b": pty << 5,
+                "block_c": 0,
+                "block_d": 0,
+                "ble": (0, 0, 0, 0),
+            }
+
+        decoder.consume(group(10))
+        self.assertIsNone(decoder.snapshot()["program_type"])
+        decoder.consume(group(10))
+        self.assertEqual(decoder.snapshot()["program_type"], "Pop Music")
+        # One block B glitch must not repaint the programme type.
+        decoder.consume(group(30))
+        self.assertEqual(decoder.snapshot()["program_type"], "Pop Music")
+        decoder.consume(group(30))
+        self.assertEqual(decoder.snapshot()["program_type"], "Alarm Test")
+
+    def test_reports_received_and_rejected_group_totals(self) -> None:
+        decoder = RdsDecoder()
+        decoder.consume({"block_a": 1, "block_b": 0, "block_c": 0, "block_d": 0, "ble": (0, 0, 0, 0)})
+        decoder.consume({"block_a": 1, "block_b": 0, "block_c": 0, "block_d": 0, "ble": (0, 3, 0, 0)})
 
         snapshot = decoder.snapshot()
-        self.assertEqual(snapshot["station_name"], "FRANCEIN")
-        self.assertEqual(snapshot["program_identification_hex"], "F123")
-        self.assertEqual(snapshot["program_type"], "Pop Music")
+        self.assertEqual(snapshot["groups_received"], 2)
+        self.assertEqual(snapshot["groups_rejected"], 1)
+        self.assertEqual(snapshot["groups_decoded"], 1)
+        self.assertEqual(snapshot["block_error_counts"], [0, 1, 0, 0])
 
     def test_assembles_radio_text_and_resets_on_ab_change(self) -> None:
         decoder = RdsDecoder()
