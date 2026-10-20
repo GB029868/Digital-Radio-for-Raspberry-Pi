@@ -40,8 +40,11 @@ CLUSTER_WINDOW_KHZ = 200
 XTAL_FREQ = 19_200_000
 CTUN = 0x07
 ANTCAP = 0
+I2C_BUS = 1
+I2C_ADDR = 0x64
 RST_PIN = 25
-INT_PIN = 23
+# RadioConfig leaves int_pin at None, and the CLI never overrides it.
+INT_PIN: Optional[int] = None
 SPI_SPEED_HZ = 30_000_000
 
 
@@ -82,6 +85,8 @@ def main() -> int:
 
     print("Booting SI4689 host-load with fmhd firmware...", flush=True)
     radio = Si468xDabRadio(
+        i2c_bus=I2C_BUS,
+        i2c_addr=I2C_ADDR,
         rst_pin=RST_PIN,
         int_pin=INT_PIN,
         use_spi=True,
