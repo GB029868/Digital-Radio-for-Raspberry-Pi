@@ -1042,7 +1042,10 @@ class Si468xDabRadio:
             "acq": bool(reply[5] & 0x04),
             "valid": bool(reply[5] & 0x01),
             "rssi": _signed_byte(reply[6]),
-            "snr": reply[7],
+            # Signed for the same reason as rssi, above, and as fm_rsq_status:
+            # a raw byte of 0xF6 means -10, not 246. Harmless today only because
+            # _dab_score() reads cnr/fic_quality/rssi and ignores snr.
+            "snr": _signed_byte(reply[7]),
             "fic_quality": reply[8],
             "cnr": reply[9],
             "tune_freq_hz": int.from_bytes(reply[12:16], "little"),
